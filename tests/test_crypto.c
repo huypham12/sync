@@ -7,17 +7,8 @@
 int main() {
     printf("========== TEST CRYPTO MODULE ==========\n");
     
-    // 1. Tạo file key ảo để test
-    const char *key_path = "dummy_key.bin";
-    FILE *f_key = fopen(key_path, "wb");
-    if (f_key) {
-        const char *key_data = "ThisIsA32ByteSecretKeyForAES256!";
-        fwrite(key_data, 1, 32, f_key);
-        fclose(f_key);
-    } else {
-        printf("Không thể tạo file key test.\n");
-        return 1;
-    }
+    // 1. Sử dụng file key chuẩn của dự án (keys/sync_secret.key)
+    const char *key_path = "keys/sync_secret.key";
     
     if (crypto_init(key_path) != 0) {
         printf("Khởi tạo Crypto thất bại.\n");
@@ -26,9 +17,9 @@ int main() {
     printf("[+] Crypto khởi tạo thành công!\n");
 
     // 2. Tạo một file plain text ảo
-    const char *plain_file = "test_plain.txt";
-    const char *enc_file = "test_enc.bin";
-    const char *dec_file = "test_dec.txt";
+    const char *plain_file = "build/test_plain.txt";
+    const char *enc_file = "build/test_enc.bin";
+    const char *dec_file = "build/test_dec.txt";
     
     FILE *f_txt = fopen(plain_file, "w");
     if (f_txt) {

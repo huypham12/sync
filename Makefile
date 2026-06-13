@@ -17,4 +17,4 @@ $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJS) $(TARGET) dummy_key.bin test_plain.txt test_enc.bin test_dec.txt
+	rm -f $(OBJS) $(TARGET) build/test_plain.txt build/test_enc.bin build/test_dec.txt dummy_key.bin

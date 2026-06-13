@@ -1,0 +1,21 @@
+# Biểu dịch (Build files)
+build/
+*.o
+*.out
+*.exe
+*.bin
+*.dll
+*.so
+*.a
+
+
+# Thư mục chứa log
+*.log
+
+# Cấu hình của các IDE/Editor
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
