@@ -31,20 +31,31 @@ Cú pháp lệnh để chạy service:
 - `--no-daemon` (Tùy chọn): Chạy nổi trên Terminal thay vì chạy ngầm (hữu ích khi test/debug).
 
 ### Kịch bản chạy trên 2 máy ảo (Node A và Node B)
-Giả sử:
-- **Node A** có IP `192.168.1.100`
-- **Node B** có IP `192.168.1.101`
 
-**Trên Node B (Chạy trước để mở Port lắng nghe):**
+**Bước 1: Cấu hình phân giải tên miền (Thực hiện trên CẢ HAI MÁY)**
+Hệ thống mạng trong code C đã được thiết kế để phân giải tên miền qua hàm `gethostbyname()`. Vì vậy, bạn cần cập nhật file `/etc/hosts` để hai máy nhận diện được nhau:
 ```bash
-mkdir -p ~/sync_folder
-./build/syncd ~/sync_folder 8080 192.168.1.100 8080 keys/sync_secret.key --no-daemon
+sudo nano /etc/hosts
+```
+Thêm hai dòng sau vào cuối file:
+```text
+192.168.241.134   node-a
+192.168.241.131   node-b
 ```
 
-**Trên Node A:**
+**Bước 2: Khởi chạy service**
+Chúng ta sẽ sử dụng cổng `8080` (bạn có thể tự do thay đổi số cổng này bằng cách truyền số khác vào tham số dòng lệnh).
+
+**Tại máy Node B (`node-b`) - Chạy trước để mở Port lắng nghe:**
 ```bash
 mkdir -p ~/sync_folder
-./build/syncd ~/sync_folder 8080 192.168.1.101 8080 keys/sync_secret.key --no-daemon
+./build/syncd ~/sync_folder 8080 node-a 8080 keys/sync_secret.key --no-daemon
+```
+
+**Tại máy Node A (`node-a`):**
+```bash
+mkdir -p ~/sync_folder
+./build/syncd ~/sync_folder 8080 node-b 8080 keys/sync_secret.key --no-daemon
 ```
 
 ## 4. Kết quả mong đợi (Expected Results)
