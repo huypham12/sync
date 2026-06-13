@@ -1,20 +1,49 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -I./common/include -g
-LDFLAGS = -lcrypto
+CFLAGS = -Wall -Wextra -I./common/include -I./daemon/include -g
+LDFLAGS = -lcrypto -lpthread
 
-# Danh sách các file source
-SRCS = common/src/crypto.c common/src/hashmap.c tests/test_crypto.c
-OBJS = $(SRCS:.c=.o)
-TARGET = build/test_crypto
+COMMON_SRC = common/src
+DAEMON_SRC = daemon/src
+BUILD_DIR = build
 
-all: $(TARGET)
+# Danh sách Object file cho Daemon
+DAEMON_OBJS = $(BUILD_DIR)/crypto.o \
+              $(BUILD_DIR)/hashmap.o \
+              $(BUILD_DIR)/network.o \
+              $(BUILD_DIR)/state_manager.o \
+              $(BUILD_DIR)/watcher.o \
+              $(BUILD_DIR)/receiver.o \
+              $(BUILD_DIR)/main.o
 
-$(TARGET): $(OBJS)
-	@mkdir -p build
+TARGET = $(BUILD_DIR)/syncd
+
+all: $(BUILD_DIR) $(TARGET)
+
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+# Link
+$(TARGET): $(DAEMON_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	@echo "Build successful! Target is $(TARGET)"
 
-%.o: %.c
+# Rules for common module
+$(BUILD_DIR)/%.o: $(COMMON_SRC)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# Rules for daemon module
+$(BUILD_DIR)/%.o: $(DAEMON_SRC)/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Target cho Unit Tests (Nếu cần build lẻ)
+test_crypto: $(BUILD_DIR) $(BUILD_DIR)/crypto.o tests/test_crypto.c
+	$(CC) $(CFLAGS) -o $(BUILD_DIR)/test_crypto $(BUILD_DIR)/crypto.o tests/test_crypto.c -lcrypto
+
+test_network: $(BUILD_DIR) $(BUILD_DIR)/network.o tests/test_network.c
+	$(CC) $(CFLAGS) -o $(BUILD_DIR)/test_network $(BUILD_DIR)/network.o tests/test_network.c
+
+test_state: $(BUILD_DIR) $(BUILD_DIR)/hashmap.o $(BUILD_DIR)/state_manager.o tests/test_state_manager.c
+	$(CC) $(CFLAGS) -o $(BUILD_DIR)/test_state $(BUILD_DIR)/hashmap.o $(BUILD_DIR)/state_manager.o tests/test_state_manager.c -lpthread
+
 clean:
-	rm -f $(OBJS) $(TARGET) build/test_plain.txt build/test_enc.bin build/test_dec.txt dummy_key.bin
+	rm -rf $(BUILD_DIR)/*
