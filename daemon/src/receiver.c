@@ -9,6 +9,9 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <arpa/inet.h>
+
+#include "../../common/include/logger.h"
 
 static void handle_client(int client_sock, ReceiverConfig* config) {
     SyncHeader header;

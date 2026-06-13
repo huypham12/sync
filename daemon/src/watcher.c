@@ -10,6 +10,9 @@
 #include <sys/inotify.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <dirent.h>
+
+#include "../../common/include/logger.h"
 
 #define EVENT_SIZE  (sizeof(struct inotify_event))
 #define BUF_LEN     (1024 * (EVENT_SIZE + 16))
@@ -110,6 +113,38 @@ void* watcher_thread_func(void* arg) {
     }
 
     printf("[Watcher] Luồng giám sát đã bắt đầu trên '%s'\n", config->sync_dir);
+
+    // --- BƯỚC QUÉT ĐẦU TIÊN (INITIAL BASELINE SCAN) ---
+    // 1. Chờ cho đến khi máy đối tác (Peer) online thì mới bắt đầu đẩy file
+    printf("[Watcher] Đang chờ máy đích (%s:%d) online để thực hiện đồng bộ...\n", config->target_ip, config->target_port);
+    while (1) {
+        int test_sock = net_connect(config->target_ip, config->target_port);
+        if (test_sock >= 0) {
+            close(test_sock); // Đối tác đã online, đóng kết nối test
+            break;
+        }
+        sleep(2); // Nghỉ 2 giây rồi thử kết nối lại
+    }
+    printf("[Watcher] Máy đích đã online! Bắt đầu đồng bộ các file có sẵn...\n");
+
+    // 2. Quét toàn bộ file đang có sẵn trong thư mục để đẩy sang máy kia
+    DIR *dir = opendir(config->sync_dir);
+    if (dir != NULL) {
+        struct dirent *ent;
+        printf("[Watcher] Đang quét các file có sẵn để đồng bộ toàn phần...\n");
+        while ((ent = readdir(dir)) != NULL) {
+            // Chỉ đồng bộ file thông thường (DT_REG) và không phải file ẩn
+            if (ent->d_type == DT_REG && ent->d_name[0] != '.') {
+                printf("[Watcher] Tìm thấy file cũ: %s. Đang tiến hành đẩy...\n", ent->d_name);
+                dispatch_file(config, ent->d_name, EVENT_MODIFY);
+            }
+        }
+        closedir(dir);
+        printf("[Watcher] Quét hoàn tất. Chuyển sang chế độ theo dõi thời gian thực (Inotify).\n");
+    } else {
+        perror("opendir");
+    }
+    // -------------------------------------------------
 
     while (1) {
         i = 0;

@@ -12,6 +12,7 @@
 #include "../include/watcher.h"
 #include "../include/receiver.h"
 #include "../../common/include/crypto.h"
+#include "../../common/include/logger.h"
 
 // Hàm chuyển tiến trình thành Daemon (chạy ngầm)
 void daemonize(const char* log_file) {

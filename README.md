@@ -67,7 +67,16 @@ mkdir -p ~/sync_folder
    - Khi máy A gửi file sang máy B, Inotify trên máy B cũng nhận diện được file bị thay đổi (do Daemon ghi file ra đĩa). 
    - Thay vì gửi ngược về A, hệ thống sẽ in ra màn hình: `[Watcher] Bỏ qua ... do STATE_NETWORK (Chống Echo)`. File sẽ không bị dội lại, mạng được giữ ổn định hoàn toàn.
 
-## 5. Dọn dẹp dự án
+## 5. Hệ thống Nhật ký (Logging)
+Hệ thống được tích hợp trình ghi nhật ký (logger) đính kèm Timestamp chuẩn `[YYYY-MM-DD HH:MM:SS]`.
+- Nếu bạn chạy ở chế độ **foreground** (thêm cờ `--no-daemon`): Log sẽ in trực tiếp ra màn hình Terminal để bạn dễ quan sát khi Demo.
+- Nếu bạn chạy ở chế độ **Daemon** (bỏ cờ `--no-daemon`): Toàn bộ thao tác đồng bộ, cảnh báo bảo mật, kết nối mạng sẽ được hệ thống âm thầm ghi vào tệp `/tmp/syncd.log`.
+Để xem trực tiếp log khi đang chạy ngầm, bạn có thể gõ lệnh:
+```bash
+tail -f /tmp/syncd.log
+```
+
+## 6. Dọn dẹp dự án
 Để xóa các file object `*.o` và file thực thi sau khi hoàn tất:
 ```bash
 make clean
