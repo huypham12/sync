@@ -4,6 +4,10 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <time.h>
+#include <pwd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <string.h>
 
 // Hàm ghi log có đính kèm Timestamp
 static inline void sync_log_print(const char* format, ...) {
@@ -39,6 +43,42 @@ static inline void sync_log_fprintf(FILE *stream, const char* format, ...) {
     va_end(args);
     
     fflush(stream);
+}
+
+// Hàm hỗ trợ lấy username từ File Owner (dùng stat và getpwuid)
+static inline void get_file_owner(const char* filepath, char* username_buf, size_t buf_size) {
+    struct stat file_stat;
+    if (stat(filepath, &file_stat) == 0) {
+        struct passwd *pw = getpwuid(file_stat.st_uid);
+        if (pw) {
+            strncpy(username_buf, pw->pw_name, buf_size - 1);
+            username_buf[buf_size - 1] = '\0';
+            return;
+        }
+    }
+    strncpy(username_buf, "unknown", buf_size - 1);
+    username_buf[buf_size - 1] = '\0';
+}
+
+// Hàm ghi Audit Log chuẩn ra file CSV
+static inline void write_audit_log(const char* username, const char* action, const char* filepath, const char* ip_source, uint64_t size, const char* hash) {
+    time_t t = time(NULL);
+    struct tm *tm_info = localtime(&t);
+    char time_buf[26];
+    strftime(time_buf, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+    
+    FILE* f = fopen("/tmp/syncd_audit.csv", "a");
+    if (f) {
+        fprintf(f, "%s,%s,%s,%s,%s,%llu,%s\n", 
+                time_buf, 
+                username ? username : "unknown", 
+                action ? action : "UNKNOWN", 
+                filepath ? filepath : "", 
+                ip_source ? ip_source : "local", 
+                (unsigned long long)size, 
+                hash ? hash : "");
+        fclose(f);
+    }
 }
 
 // Macro "Hack" để tự động chặn các hàm printf/fprintf cũ trong file và thêm timestamp

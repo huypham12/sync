@@ -18,7 +18,9 @@ typedef enum {
 #pragma pack(push, 1)
 typedef struct {
     uint8_t event_type;                           // Loại sự kiện (CREATE, MODIFY, DELETE)
+    uint8_t is_dir;                               // Cờ phân biệt: 1 = Directory, 0 = File
     uint64_t file_size;                           // Kích thước file (bytes)
+    uint32_t mode;                                // Quyền truy cập (Permissions)
     char file_name[MAX_FILE_NAME];                // Tên file (đường dẫn tương đối)
     char checksum[65];                            // Mã băm SHA-256 (Chuỗi Hex string)
 } SyncHeader;

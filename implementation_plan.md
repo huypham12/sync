@@ -1,92 +1,83 @@
-# Kế Hoạch Triển Khai (Implementation Plan) - Secure File Sync Service
+# Kế hoạch Triển khai (Implementation Plan) - Nâng cấp Sync Daemon
 
-## 1. Phân Tích Hiện Trạng Source Code
+Bản thiết kế này phân tích hiện trạng mã nguồn của dự án Secure Bidirectional File Synchronization Service và vạch ra lộ trình (Phase -> Milestone -> Task) để hoàn thiện các yêu cầu mới trong `spec.md` một cách đơn giản, chính xác, bám sát đồ án môn học System Programming.
 
-Sau khi đối chiếu toàn bộ source code hiện tại với tài liệu `spec.md`, dưới đây là đánh giá hiện trạng:
+## Đánh giá Hiện trạng (Current State Analysis) so với `spec.md`
 
-### 1.1. Những phần ĐÃ hoàn thành
-- **Mã hóa & Băm (Crypto Engine)**: `common/include/crypto.h` và `common/src/crypto.c` đã triển khai tốt việc sử dụng OpenSSL để mã hóa AES-256 (CBC) và băm SHA-256.
-- **Trí nhớ cục bộ (Hashmap)**: `common/include/hashmap.h` và `common/src/hashmap.c` đã xây dựng cấu trúc Hashmap với mảng 1024 phần tử.
-- **Unit Test (Crypto)**: `tests/test_crypto.c` đã có sẵn.
+### 1. Phần đã hoàn thành (Implemented)
+- **Truyền tải & Đồng bộ**: Đã có `TCP Socket` (lắng nghe, kết nối, nhận/gửi). Đã cắt luồng gửi nhận ra 2 thread riêng biệt.
+- **Bảo mật**: Đã tích hợp `crypto.c` (mã hóa/giải mã, băm SHA-256).
+- **Chặn lặp vô hạn (State Manager)**: Đã có cấu trúc Hashmap và cơ chế đánh dấu `STATE_NETWORK` chống Echo Loop.
+- **Phát hiện sự kiện file**: Đã sử dụng `inotify` bắt các sự kiện `CREATE`, `MODIFY`, `DELETE`.
 
-### 1.2. Những phần CÒN THIẾU hoặc RỖNG
-- **Giao thức mạng (Protocol)**: `common/include/protocol.h` đang rỗng.
-- **Network Wrapper**: `common/include/network.h` và `common/src/network.c` đang rỗng.
-- **Tầng Nghiệp vụ (Daemon Core)**: Các file `main.c`, `state_manager.c`, `watcher.c`, `receiver.c` đều đang rỗng.
-- **Unit Test (State Manager)**: `tests/test_state_manager.c` rỗng.
-
-### 1.3. Những phần CẦN REFACTOR / CẬP NHẬT
-- **Quản lý đa luồng (Thread-safety)**: `hashmap.c` chưa an toàn. Cần bọc bằng `pthread_mutex_t` trong `state_manager.c`.
-- **Hệ thống Build (Makefile)**: Cần cập nhật để biên dịch Daemon cùng thư viện `pthread`.
+### 2. Phần chưa hoàn thành / Còn thiếu (Missing Features)
+- **Đồng bộ Thư mục con & Metadata (Permissions)**: Cấu trúc `SyncHeader` hiện tại thiếu cờ phân biệt File/Thư mục (`is_dir`) và cờ phân quyền (`mode`). `watcher.c` chưa gọi `stat()` lấy thông tin và chưa hỗ trợ đẩy thư mục. `receiver.c` chưa hỗ trợ tạo `mkdir` linh hoạt từ sự kiện và chưa gọi `chmod()` để thiết lập lại quyền. `inotify` chưa bắt sự kiện đổi quyền (`IN_ATTRIB`).
+- **Xử lý Tín hiệu (Graceful Shutdown)**: `main.c` hiện tại chỉ block `SIGPIPE`. Khi tắt bằng `kill`, chương trình chết đột ngột mà không đóng các file descriptors, không dọn dẹp hashmap/RAM.
+- **Hoàn thiện Daemonization**: Cần tạo PID file (VD: `/tmp/syncd.pid`) để dễ dàng quản lý tiến trình ngầm.
 
 ---
 
-## 2. Kế Hoạch Triển Khai Chi Tiết (Phases & Tasks)
+## Lộ trình Triển khai (Implementation Roadmap)
 
-### Phase 1: Xây dựng nền tảng Mạng và Giao thức (Network & Protocol)
+### Phase 1: Quản lý Thư mục & Đồng bộ Siêu dữ liệu (Directory & Metadata Sync)
+**Mục tiêu**: Bổ sung khả năng nhận diện/tạo thư mục con, đồng thời đóng gói kèm thông tin về Quyền (Permissions) khi gửi qua mạng. Ở máy nhận, phục dựng lại chính xác loại file và quyền này.
 
-**Milestone 1.1: Định nghĩa Giao thức Truyền tải (Protocol)**
-*   **Task 1.1.1: Định nghĩa cấu trúc gói tin TCP**
-    *   **Mục tiêu**: Xây dựng `SyncHeader` chứa: Event Type (CREATE, MODIFY, DELETE), File Size, File Name tương đối, SHA-256 Checksum.
-    *   **Đầu ra**: `common/include/protocol.h`.
-    *   **Tiêu chí hoàn thành**: Khai báo struct chuẩn C, có `#pragma pack(1)` chống lệch byte alignment.
+* **Task 1.1: Cập nhật Protocol Header**
+  * **File thao tác**: `common/include/protocol.h`
+  * **Đầu vào**: Cấu trúc `SyncHeader` hiện tại.
+  * **Đầu ra**: Bổ sung thêm `uint8_t is_dir` và `mode_t mode` vào `SyncHeader`.
+  * **Tiêu chí hoàn thành**: Trình biên dịch không báo lỗi struct size, giữ nguyên `pack(1)`.
 
-**Milestone 1.2: Tiện ích Socket (Network Wrapper)**
-*   **Task 1.2.1: Triển khai thư viện Network**
-    *   **Mục tiêu**: Bọc API Socket (`socket`, `bind`, `listen`, `connect`, `send`, `recv`).
-    *   **Đầu ra**: `common/include/network.h` và `common/src/network.c`.
-    *   **Tiêu chí hoàn thành**: Viết các hàm `net_listen`, `net_connect`, `net_send_exact`, `net_recv_exact` (có vòng lặp xử lý partial send/recv để đảm bảo truyền trọn vẹn chunk dữ liệu).
+* **Task 1.2: Xử lý `stat()` và Thư mục con ở Watcher**
+  * **File thao tác**: `daemon/src/watcher.c`
+  * **Đầu vào**: Hàm `dispatch_file()`.
+  * **Đầu ra**: 
+    - Thêm mask `IN_ATTRIB` vào cấu hình inotify. Xử lý cờ `IN_ISDIR` khi bắt sự kiện.
+    - Gọi hàm `stat()` trên file/thư mục gốc để lấy `st_mode` nạp vào `header.mode`. Cập nhật `header.is_dir = 1` nếu là thư mục.
+    - Nếu là thư mục, **bỏ qua** bước đọc file và mã hóa (`encrypt_file`), chỉ gửi header đi.
+  * **Tiêu chí hoàn thành**: Bắt được sự kiện tạo thư mục con và sự kiện đổi quyền (`chmod`), gửi thành công header tương ứng sang máy nhận.
 
-### Phase 2: Quản Lý Trạng Thái An Toàn (State Management & Thread Safety)
+* **Task 1.3: Xử lý Thư mục & Áp dụng Metadata ở Receiver**
+  * **File thao tác**: `daemon/src/receiver.c`
+  * **Đầu vào**: Hàm `handle_client()`.
+  * **Đầu ra**: 
+    - Nếu `header.is_dir == 1`, không thực hiện nhận block dữ liệu/giải mã, chỉ gọi lệnh `mkdir(target_path, 0777)`.
+    - Ở bước cuối (sau khi tạo thư mục hoặc ghi file xong), gọi hàm `chmod(target_path, header.mode)` để tái tạo quyền cục bộ.
+  * **Tiêu chí hoàn thành**: Máy B tạo được thư mục con rỗng tương ứng và các file nhận được giữ nguyên quyền đặc thù (`readonly`, `executable`) như máy A.
 
-**Milestone 2.1: Thread-Safe State Manager**
-*   **Task 2.1.1: Triển khai State Manager với Mutex**
-    *   **Mục tiêu**: Bọc Hashmap bằng Mutex để đảm bảo an toàn truy xuất giữa Watcher và Receiver.
-    *   **Đầu ra**: `daemon/include/state_manager.h` và `daemon/src/state_manager.c`.
-    *   **Chi tiết**: Thêm `pthread_mutex_t state_mutex`. Chỉ lock Mutex trong khoảnh khắc tra cứu/cập nhật Hashmap trên RAM (`sm_put`, `sm_get`). Tuyệt đối KHÔNG lock Mutex xuyên suốt toàn bộ thời gian xử lý I/O (đọc/ghi đĩa cứng, truyền/nhận mạng) để không làm nghẽn luồng.
-    *   **Tiêu chí hoàn thành**: Các hàm `sm_init`, `sm_set_state`, `sm_get_state` hoạt động thread-safe.
+---
 
-*   **Task 2.1.2: Viết Unit Test cho State Manager**
-    *   **Mục tiêu**: Đảm bảo State Manager không bị Race Condition.
-    *   **Đầu ra**: File `tests/test_state_manager.c` hoàn thiện.
-    *   **Tiêu chí hoàn thành**: Test đa luồng chạy ổn định.
+### Phase 2: Xử lý Tín hiệu & Thoát An toàn (Signal Handling & Graceful Shutdown)
+**Mục tiêu**: Biến chương trình thành chuẩn System Service, biết lắng nghe các tín hiệu của hệ điều hành để dọn dẹp tài nguyên trước khi tắt.
 
-### Phase 3: Cốt lõi của Daemon (Watcher & Receiver)
+* **Task 2.1: Đăng ký Signal Handlers**
+  * **File thao tác**: `daemon/src/main.c`
+  * **Đầu vào**: Hàm `main()`.
+  * **Đầu ra**: Viết hàm `sig_handler(int signo)`. Đăng ký bằng `sigaction()` cho các tín hiệu `SIGINT`, `SIGTERM`.
+  * **Tiêu chí hoàn thành**: Bấm `Ctrl+C` hoặc dùng `kill -15` chương trình không bị Killed ngay lập tức mà nhảy vào hàm xử lý.
 
-**Milestone 3.1: Inotify Directory Watcher (Luồng Gửi)**
-*   **Task 3.1.1: Triển khai module Watcher**
-    *   **Mục tiêu**: Lắng nghe thư mục, kiểm tra trạng thái, băm, mã hóa và đẩy đi.
-    *   **Đầu ra**: `daemon/include/watcher.h` và `daemon/src/watcher.c`.
-    *   **Chi tiết & Sửa lỗi Logic**:
-        1. **Chỉ bắt sự kiện chắc chắn**: Dùng `inotify`, nhưng chỉ xử lý biến đổi file đối với sự kiện `IN_CLOSE_WRITE` (File đã được ghi xong). Bỏ qua `IN_MODIFY` lẻ tẻ lúc đang ghi dở. Xử lý `IN_DELETE` để đồng bộ thao tác xoá.
-        2. **Chặn tiếng vang cục bộ**: Kiểm tra `sm_get_state(filename)`. Nếu trạng thái là `STATE_NETWORK`, luồng Watcher sẽ lập tức `return` bỏ qua sự kiện này. **Tuyệt đối Watcher không tự reset STATE_NETWORK về STATE_NONE** để tránh các event inotify tiếp theo phá vỡ cơ chế chống echo.
-        3. **Cách ly file tạm**: Gọi hàm `encrypt_file`. File mã hoá đầu ra `.enc` PHẢI nằm tại một thư mục cô lập tạm thời ở Linux (ví dụ `/tmp/syncd/`), không được sinh ra trong thư mục mà inotify đang theo dõi. 
-    *   **Tiêu chí hoàn thành**: Bắt đúng sự kiện `IN_CLOSE_WRITE`/`IN_DELETE`, mã hóa ra `/tmp` thành công, gửi gói tin an toàn.
+* **Task 2.2: Luồng điều khiển an toàn (Thread Cancellation bằng cách ngắt FD)**
+  * **File thao tác**: `daemon/src/main.c`
+  * **Đầu vào**: Hàm `sig_handler()` và các luồng đang bị block bởi I/O.
+  * **Đầu ra**: Khi nhận `SIGTERM`, luồng chính (Main Thread) gọi `shutdown(server_fd, SHUT_RDWR)` để ép lệnh `accept()` trong Receiver bung ra ngay lập tức. Đồng thời gọi `close(inotify_fd)` để ép hàm `read()` trong Watcher bung ra.
+  * **Tiêu chí hoàn thành**: Các luồng tự động thoát trạng thái "treo" (block) ngay lập tức khi nhận tín hiệu tắt và tiến tới hàm kết thúc.
 
-**Milestone 3.2: TCP Receiver (Luồng Nhận)**
-*   **Task 3.2.1: Triển khai module Receiver**
-    *   **Mục tiêu**: Nhận file từ TCP, đặt lock state chặn Watcher, giải mã và ghi đĩa.
-    *   **Đầu ra**: `daemon/include/receiver.h` và `daemon/src/receiver.c`.
-    *   **Chi tiết & Sửa lỗi Logic**:
-        1. **Set chặn ngay lập tức**: Khi bắt đầu tiếp nhận gói tin mới, gọi `sm_set_state(filename, STATE_NETWORK)` NGAY TRƯỚC KHI tạo bất kỳ thao tác I/O nào xuống ổ cứng.
-        2. **Giải mã và Toàn vẹn**: Nhận payload mã hoá ra `/tmp/syncd/`, giải mã, check mã băm SHA256 với Header. Sau đó di chuyển/lưu vào thư mục đích.
-        3. **Trì hoãn mở khoá (Delay Reset)**: Ngay sau khi lệnh `close(file)` ở thư mục đích hoàn tất (gây ra cơn bão event trên inotify của Watcher), thread này gọi `sleep(1)` để chờ các event inotify đó trôi hết ra khỏi hàng đợi. Cuối cùng mới gọi `sm_set_state(filename, STATE_NONE)` để cho phép các chỉnh sửa Local trong tương lai.
-    *   **Tiêu chí hoàn thành**: Giải mã đúng, SHA256 chuẩn, xử lý triệt để vòng lặp dội ngược.
+* **Task 2.3: Xả tài nguyên (Resource Cleanup)**
+  * **File thao tác**: `daemon/src/main.c` (đoạn kết thúc sau khi các luồng đã `pthread_join()`).
+  * **Đầu vào**: Toàn bộ tài nguyên đã cấp phát.
+  * **Đầu ra**: Gọi `sm_destroy()` giải phóng Hashmap. Giải phóng cấu hình `w_config`, `r_config`. Xóa PID file `/tmp/syncd.pid`.
+  * **Tiêu chí hoàn thành**: Log hiển thị "Clean shutdown complete", không xảy ra rò rỉ bộ nhớ (Memory Leak), các file mô tả (FD) được đóng an toàn.
 
-### Phase 4: Hoàn Thiện Hệ Thống & Daemonization
+---
 
-**Milestone 4.1: Điểm truy cập chính (Entry Point & Logging)**
-*   **Task 4.1.1: Triển khai `main.c` và Daemon process**
-    *   **Mục tiêu**: Khởi chạy ứng dụng chạy ngầm an toàn mạng.
-    *   **Đầu ra**: `daemon/src/main.c`.
-    *   **Chi tiết**:
-        1. Khởi tạo Daemon (`fork()`, `setsid()`, redirect log...).
-        2. **Chống sập ứng dụng (SIGPIPE Handling)**: Gọi `signal(SIGPIPE, SIG_IGN);`. Điều này bắt buộc để khi mạng đứt ngang giữa chừng lúc đang `send()`, hệ điều hành sẽ không bắn tín hiệu huỷ tiến trình.
-        3. Lần lượt khởi động `sm_init()`, `crypto_init()`, rẽ nhánh thread cho Watcher và Receiver.
-    *   **Tiêu chí hoàn thành**: Chạy ổn định ở nền, không sập khi thử rút mạng ngắt kết nối.
+### Phase 3: Hoàn thiện Daemonization (Tiến trình Hệ thống)
+**Mục tiêu**: Bổ sung PID file phục vụ quản lý vòng đời Daemon.
 
-**Milestone 4.2: Hệ thống Build (Makefile)**
-*   **Task 4.2.1: Cập nhật Makefile**
-    *   **Mục tiêu**: Cấu hình tự động biên dịch toàn bộ.
-    *   **Đầu ra**: File `Makefile`.
-    *   **Tiêu chí hoàn thành**: Lệnh `make all` build trọn vẹn `build/syncd` với flag thư viện `-lcrypto` (OpenSSL) và `-lpthread` (luồng), không cảnh báo lỗi logic C.
+* **Task 3.1: Ghi PID File**
+  * **File thao tác**: `daemon/src/main.c` (hàm `daemonize()`)
+  * **Đầu vào**: Quá trình `fork()` và `setsid()` thành công.
+  * **Đầu ra**: Mở file `/tmp/syncd.pid` và ghi `getpid()` vào đó. Đảm bảo PID file được xóa sạch sẽ trong phần Cleanup (Task 2.3) khi ngắt daemon.
+  * **Tiêu chí hoàn thành**: Quản trị viên có thể gõ lệnh `cat /tmp/syncd.pid` để xem ID tiến trình và dùng ID đó chạy lệnh `kill`.
+
+> [!NOTE]
+> Kế hoạch đã được tinh giản! Toàn bộ các yêu cầu thừa hoặc gây rủi ro kỹ thuật (như `SIGHUP` reload config, hay đồng bộ `chown` bằng quyền root) đã được loại bỏ. Thiết kế này tập trung tuyệt đối vào tính ổn định và bao phủ chính xác các kỹ thuật Lập trình hệ thống Linux.

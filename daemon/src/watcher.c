@@ -17,7 +17,6 @@
 #define EVENT_SIZE  (sizeof(struct inotify_event))
 #define BUF_LEN     (1024 * (EVENT_SIZE + 16))
 
-// Hàm phụ trợ đẩy file qua mạng
 static void dispatch_file(WatcherConfig* config, const char* filename, SyncEventType type) {
     char local_path[2048];
     snprintf(local_path, sizeof(local_path), "%s/%s", config->sync_dir, filename);
@@ -27,10 +26,19 @@ static void dispatch_file(WatcherConfig* config, const char* filename, SyncEvent
     header.event_type = type;
     strncpy(header.file_name, filename, MAX_FILE_NAME - 1);
     
+    struct stat st;
+    if (type != EVENT_DELETE && stat(local_path, &st) == 0) {
+        header.mode = st.st_mode;
+        header.is_dir = S_ISDIR(st.st_mode) ? 1 : 0;
+    } else {
+        header.mode = 0;
+        header.is_dir = 0;
+    }
+    
     char encrypted_path[2048];
     snprintf(encrypted_path, sizeof(encrypted_path), "/tmp/syncd/%s.enc", filename);
     
-    if (type == EVENT_MODIFY || type == EVENT_CREATE) {
+    if ((type == EVENT_MODIFY || type == EVENT_CREATE) && header.is_dir == 0) {
         // Tạo thư mục tạm nếu chưa có
         mkdir("/tmp/syncd", 0777);
         
@@ -49,14 +57,14 @@ static void dispatch_file(WatcherConfig* config, const char* filename, SyncEvent
         }
         
         // Lấy kích thước file mã hóa
-        struct stat st;
-        if (stat(encrypted_path, &st) == 0) {
-            header.file_size = st.st_size;
+        struct stat enc_st;
+        if (stat(encrypted_path, &enc_st) == 0) {
+            header.file_size = enc_st.st_size;
         } else {
             header.file_size = 0;
         }
     } else {
-        header.file_size = 0; // EVENT_DELETE
+        header.file_size = 0; // EVENT_DELETE hoặc DIRECTORY
     }
     
     // Gửi qua mạng
@@ -73,8 +81,8 @@ static void dispatch_file(WatcherConfig* config, const char* filename, SyncEvent
         return;
     }
     
-    // Gửi nội dung nếu là CREATE/MODIFY
-    if (type == EVENT_MODIFY || type == EVENT_CREATE) {
+    // Gửi nội dung nếu là CREATE/MODIFY và không phải thư mục
+    if ((type == EVENT_MODIFY || type == EVENT_CREATE) && header.is_dir == 0) {
         FILE* f = fopen(encrypted_path, "rb");
         if (f) {
             char buffer[8192];
@@ -90,7 +98,29 @@ static void dispatch_file(WatcherConfig* config, const char* filename, SyncEvent
     }
     
     close(sock);
-    printf("[Watcher] Dispatched event %d for %s\n", type, filename);
+    
+    // Bắt đầu ghi Audit Log
+    char username[64];
+    if (type == EVENT_DELETE) {
+        // Nếu xóa file, stat sẽ thất bại. Đặt là unknown hoặc lấy user chạy tiến trình.
+        // Ta gán mặc định do không dùng fanotify
+        strcpy(username, "unknown (deleted)");
+    } else {
+        get_file_owner(local_path, username, sizeof(username));
+    }
+    
+    const char* action_str = "UNKNOWN";
+    if (type == EVENT_CREATE) action_str = "CREATE";
+    else if (type == EVENT_MODIFY) action_str = "MODIFY";
+    else if (type == EVENT_DELETE) action_str = "DELETE";
+
+    char safe_hash[65];
+    memcpy(safe_hash, header.checksum, 65);
+    safe_hash[64] = '\0';
+    
+    write_audit_log(username, action_str, filename, "127.0.0.1 (local)", header.file_size, safe_hash);
+    
+    printf("[Watcher] Dispatched event %d for %s (is_dir: %d, mode: %o)\n", type, filename, header.is_dir, header.mode & 0777);
 }
 
 void* watcher_thread_func(void* arg) {
@@ -105,8 +135,9 @@ void* watcher_thread_func(void* arg) {
         perror("inotify_init");
         return NULL;
     }
+    global_inotify_fd = fd;
 
-    wd = inotify_add_watch(fd, config->sync_dir, IN_CLOSE_WRITE | IN_DELETE | IN_MOVED_TO);
+    wd = inotify_add_watch(fd, config->sync_dir, IN_CLOSE_WRITE | IN_DELETE | IN_MOVED_TO | IN_CREATE | IN_ATTRIB);
     if (wd == -1) {
         fprintf(stderr, "Cannot watch '%s'\n", config->sync_dir);
         return NULL;
@@ -133,9 +164,11 @@ void* watcher_thread_func(void* arg) {
         struct dirent *ent;
         printf("[Watcher] Đang quét các file có sẵn để đồng bộ toàn phần...\n");
         while ((ent = readdir(dir)) != NULL) {
-            // Chỉ đồng bộ file thông thường (DT_REG) và không phải file ẩn
-            if (ent->d_type == DT_REG && ent->d_name[0] != '.') {
-                printf("[Watcher] Tìm thấy file cũ: %s. Đang tiến hành đẩy...\n", ent->d_name);
+            // Bỏ qua file ẩn, thư mục . và ..
+            if (ent->d_name[0] == '.') continue;
+            
+            if (ent->d_type == DT_REG || ent->d_type == DT_DIR) {
+                printf("[Watcher] Tìm thấy mục cũ: %s. Đang tiến hành đẩy...\n", ent->d_name);
                 dispatch_file(config, ent->d_name, EVENT_MODIFY);
             }
         }
@@ -146,10 +179,11 @@ void* watcher_thread_func(void* arg) {
     }
     // -------------------------------------------------
 
-    while (1) {
+    while (keep_running) {
         i = 0;
         length = read(fd, buffer, BUF_LEN);
         if (length < 0) {
+            if (!keep_running) break; // Thoát an toàn
             perror("read");
             break;
         }
@@ -169,8 +203,8 @@ void* watcher_thread_func(void* arg) {
                     // Tuyệt đối không gọi sm_set_state(..., STATE_NONE) ở đây!
                 } else {
                     // Xử lý sự kiện hợp lệ (Local)
-                    if (event->mask & IN_CLOSE_WRITE || event->mask & IN_MOVED_TO) {
-                        printf("[Watcher] Phát hiện thay đổi cục bộ (Local): %s\n", event->name);
+                    if (event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_ATTRIB)) {
+                        printf("[Watcher] Phát hiện thay đổi cục bộ (Local): %s (Mask: 0x%x)\n", event->name, event->mask);
                         dispatch_file(config, event->name, EVENT_MODIFY);
                     } else if (event->mask & IN_DELETE) {
                         printf("[Watcher] Phát hiện xóa cục bộ (Local): %s\n", event->name);

@@ -14,6 +14,29 @@
 #include "../../common/include/crypto.h"
 #include "../../common/include/logger.h"
 
+// Biến toàn cục phục vụ Graceful Shutdown
+volatile sig_atomic_t keep_running = 1;
+int global_server_fd = -1;
+int global_inotify_fd = -1;
+
+void sig_handler(int signo) {
+    if (signo == SIGINT || signo == SIGTERM) {
+        printf("\n[Daemon] Bắt được tín hiệu %d, đang dọn dẹp để thoát...\n", signo);
+        keep_running = 0;
+        
+        // Đánh thức luồng receiver đang bị block ở accept()
+        if (global_server_fd >= 0) {
+            shutdown(global_server_fd, SHUT_RDWR);
+        }
+        
+        // Đánh thức luồng watcher đang bị block ở read() inotify
+        if (global_inotify_fd >= 0) {
+            close(global_inotify_fd);
+            global_inotify_fd = -1;
+        }
+    }
+}
+
 // Hàm chuyển tiến trình thành Daemon (chạy ngầm)
 void daemonize(const char* log_file) {
     pid_t pid = fork();
@@ -45,6 +68,13 @@ void daemonize(const char* log_file) {
             close(fd);
         }
     }
+
+    // Ghi PID file
+    FILE* pid_file = fopen("/tmp/syncd.pid", "w");
+    if (pid_file) {
+        fprintf(pid_file, "%d\n", getpid());
+        fclose(pid_file);
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -68,6 +98,13 @@ int main(int argc, char* argv[]) {
     // QUAN TRỌNG: Chống sập ứng dụng khi đầu kia rút mạng bất ngờ
     // Nếu không có dòng này, việc send() vào socket đóng sẽ bắn ra SIGPIPE giết chết tiến trình
     signal(SIGPIPE, SIG_IGN);
+
+    // Đăng ký Signal Handler (Task 2.1)
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = sig_handler;
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
 
     // Khởi tạo Crypto và đọc Key
     if (crypto_init(key_path) != 0) {
@@ -113,10 +150,18 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    // Chờ 2 luồng sống mãi mãi
+    // Chờ 2 luồng thoát (Task 2.3)
     pthread_join(thread_receiver, NULL);
     pthread_join(thread_watcher, NULL);
 
+    printf("\n[Daemon] Dọn dẹp tài nguyên...\n");
     sm_destroy();
+    free(w_config);
+    free(r_config);
+    
+    // Xóa PID file
+    unlink("/tmp/syncd.pid");
+    
+    printf("[Daemon] Clean shutdown complete.\n");
     return 0;
 }

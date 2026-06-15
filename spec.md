@@ -29,20 +29,24 @@ Xây dựng hệ thống Daemon (chạy nền) trên mỗi máy có khả năng 
 
 **Truyền tải & Đồng bộ**
 * Giao tiếp qua TCP Socket.
-* Đồng bộ 2 chiều theo thời gian thực.
+* Đồng bộ 2 chiều theo thời gian thực (bao gồm cả nội dung và metadata của file như quyền, chủ sở hữu).
 * Lưu trữ trạng thái cục bộ để chặn lặp vô hạn.
+
+**Quản lý Hệ thống & Tiến trình**
+* Chạy ngầm dưới dạng Daemon hoàn chỉnh.
+* Quản lý tín hiệu hệ thống (Signal Handling) để tắt ứng dụng an toàn (Graceful Shutdown) và reload cấu hình.
 
 ## 4. Phạm vi
 
 ### 4.1. Trong phạm vi
 **Đối tượng thao tác**
 * Tất cả các định dạng file phổ biến (txt, pdf, docx, jpg, v.v.).
-* Các thao tác: Create, Modify, Delete.
+* Các thao tác: Create, Modify, Delete, Change Permissions (Đồng bộ siêu dữ liệu).
 
 **Công nghệ & Môi trường**
 * Hệ điều hành: Ubuntu (Linux).
 * Ngôn ngữ: C/C++.
-* Thư viện: OpenSSL (Mã hóa), `inotify` (Giám sát file), `pthread` (Đa luồng).
+* Thư viện & System Calls: OpenSSL (Mã hóa), `inotify` (Giám sát file), `pthread` (Đa luồng), `fork`/`setsid` (Daemon), `sigaction` (Signal).
 
 **Mô hình Mạng**
 * Nút mạng đối xứng (Symmetric Node/Peer-to-Peer logic trên TCP).
@@ -134,9 +138,11 @@ file-sync-service/
 * **FR-03: Phát hiện sự kiện (File Tracking)**: Hệ thống phải phát hiện ngay lập tức các sự kiện: tạo file mới, sửa đổi nội dung, và xóa file.
 * **FR-04: Ngăn chặn vòng lặp (State Management)**: **[QUAN TRỌNG]** Khi máy A gửi file sang máy B, hệ thống trên máy B phải lưu trạng thái sự kiện này để không gửi ngược file trở lại máy A.
 * **FR-05: Bảo mật dữ liệu (Data Encryption)**: Toàn bộ dữ liệu file phải được mã hóa bằng thuật toán AES trước khi truyền qua Socket và giải mã khi nhận.
-* **FR-06: Đóng gói và Truyền tải (Transmission)**: Hệ thống phải truyền thông tin qua mạng bao gồm: Loại sự kiện (Create/Mod/Del), Tên file tương đối, và Nội dung đã mã hóa.
-* **FR-07: Cập nhật đích (Target Update)**: Hệ thống phải thực thi chính xác lệnh tạo, ghi đè, hoặc xóa file trên ổ cứng dựa theo gói tin nhận được.
+* **FR-06: Đóng gói và Truyền tải (Transmission)**: Hệ thống phải truyền thông tin qua mạng bao gồm: Loại sự kiện (Create/Mod/Del), Tên file tương đối, Metadata (Permissions, Owner), và Nội dung đã mã hóa.
+* **FR-07: Cập nhật đích (Target Update)**: Hệ thống phải thực thi chính xác lệnh tạo, ghi đè, xóa file, hoặc phân quyền (`chmod`, `chown`) trên ổ cứng dựa theo gói tin nhận được và tạo thư mục nếu cần.
 * **FR-08: Ghi nhật ký (Logging)**: Hệ thống phải ghi log chi tiết các hoạt động ra file (ví dụ `/var/log/syncd.log`).
+* **FR-09: Quản lý Tiến trình (Daemonization)**: Hệ thống phải khởi chạy ngầm bằng cách tách khỏi terminal (fork, setsid) và ghi PID ra file để quản lý.
+* **FR-10: Xử lý Tín hiệu (Graceful Shutdown)**: Hệ thống phải bắt các tín hiệu hệ thống (`SIGTERM`, `SIGINT`) để dọn dẹp bộ nhớ, đóng socket và file descriptors trước khi thoát. Hỗ trợ tín hiệu `SIGHUP` để reload cấu hình.
   *Ví dụ:*
   ```text
   [10:10:01] [INOTIFY] Detected modification on local file: report.txt
@@ -164,30 +170,45 @@ file-sync-service/
 ## 9. Áp dụng kiến thức môn học (System Programming)
 
 Hệ thống này sẽ sử dụng triệt để các kiến thức:
-* **Process & IPC**: Biến chương trình thành Daemon: Dùng `fork()`, `setsid()`, `chdir("/")`, đóng `STDIN`/`STDOUT`. Quản lý PID file.
+* **Process & IPC**: Biến chương trình thành Daemon: Dùng `fork()`, `setsid()`, `chdir("/")`, đóng `STDIN`/`STDOUT`. Sử dụng `setuid()`, `setgid()` để hạ quyền nếu cần. Quản lý PID file.
+* **Signal Handling**: Dùng `signal()` hoặc `sigaction()` để bắt các tín hiệu ngắt (`SIGTERM`, `SIGINT`) đảm bảo Graceful Shutdown và `SIGHUP` để reload cấu hình.
 * **Thread & Concurrency**: Quản lý đa luồng (`pthread`), gồm Thread Watcher, Thread Receiver, và có thể Thread Worker. Sử dụng `pthread_mutex_t` để khóa đồng bộ State Manager.
-* **File System**: Các lệnh `open()`, `read()`, `write()`, `close()`, `remove()`, `stat()`.
+* **File System**: Các lệnh thao tác nội dung và metadata: `open()`, `read()`, `write()`, `close()`, `remove()`, `stat()`, `chmod()`, `chown()`, `mkdir()`, `readdir()`.
 * **Socket & Network**: TCP Core (`socket()`, `bind()`, `listen()`, `accept()`, `connect()`, `send()`, `recv()`).
 * **Data Structures**: Cấu trúc Hash Map trên RAM tra cứu nhanh `O(1)`.
 * **Cryptography**: Dùng thư viện OpenSSL (`libcrypto`) để mã hóa AES và băm SHA256.
 
 ## 10. Kịch bản Demo bảo vệ đồ án
 
-**Bối cảnh:** Mở sẵn 2 máy ảo Ubuntu (hoặc 2 Terminal). Show sẵn bảng log `tail -f /var/log/syncd.log` ở cả hai bên. Khởi chạy Daemon.
+**Bối cảnh:** Mở sẵn 2 máy ảo Ubuntu (hoặc 2 Terminal). Show sẵn bảng log `tail -f /var/log/syncd.log` ở cả hai bên.
 
-1. **Demo Đồng bộ 2 chiều tức thời:**
+1. **Demo Quản lý tiến trình (Daemon & Lifecycle):**
+   * Gõ lệnh khởi chạy service: `./syncd --config /etc/syncd.conf`.
+   * Trình điều khiển trả lại dấu nhắc lệnh ngay lập tức (không treo terminal).
+   * Gõ `ps aux | grep syncd` để chứng minh tiến trình đang chạy ngầm với một PID cụ thể, chứng minh việc gọi hàm `fork()` và `setsid()` đã thành công.
+
+2. **Demo Đồng bộ 2 chiều tức thời:**
    * Tạo file `test.txt` ở máy A → Máy B có ngay lập tức.
    * Mở file đó trên máy B, gõ "Hello from B" → Máy A nhận được update.
    * Xóa file ở A → Máy B mất file.
 
-2. **Demo "Chặn lặp vô hạn" (State Manager):**
+3. **Demo "Chặn lặp vô hạn" (State Manager):**
    * Chỉ vào bảng Log của máy B giải thích: Khi máy B nhận file từ mạng, inotify của ổ cứng B báo sự kiện sửa file, nhưng tiến trình State Manager đã check Hash Map, phát hiện đây là file từ mạng nên block lại, không gửi dội ngược về A.
 
-3. **Demo Bảo mật (Mã hóa gói tin):**
+4. **Demo Quản lý File (Metadata Sync):**
+   * Tại Node A, gõ lệnh `chmod 400 secret.txt`.
+   * Sang Node B, gõ lệnh `ls -l`. Hệ thống sẽ hiển thị file `secret.txt` cũng đã được đổi quyền thành `-r--------`.
+   * Giải thích việc sử dụng `stat()` đóng gói vào mạng và dùng `chmod()` để áp dụng tại máy nhận.
+
+5. **Demo Bảo mật (Mã hóa gói tin):**
    * Bật Wireshark bắt gói tin TCP.
    * Ghi chữ "MAT KHAU LA 123" vào file trên A.
    * Wireshark chỉ bắt được chuỗi byte vô nghĩa (đã mã hóa AES-256).
    * Máy B nhận được file, giải mã và hiển thị nội dung gốc.
+
+6. **Demo Quản lý Tín hiệu (Graceful Shutdown):**
+   * Gõ `kill -15 <PID_của_Node_A>` (gửi tín hiệu SIGTERM).
+   * Trỏ vào Log của Node A: Sẽ thấy dòng log nhận tín hiệu SIGTERM, sau đó dọn dẹp TCP, Hashmap, đóng các File Descriptor và thoát an toàn.
 
 **Tổng kết:**
 Luồng kiến trúc: `Directory Watcher` $\rightarrow$ `Mutex/Thread` $\rightarrow$ `Hash Map State` $\rightarrow$ `Crypto` $\rightarrow$ `Socket TCP`.
