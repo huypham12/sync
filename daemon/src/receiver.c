@@ -150,7 +150,25 @@ void* receiver_thread_func(void* arg) {
     printf("[Receiver] Luồng tiếp nhận đã bắt đầu trên port %d...\n", config->listen_port);
     global_server_fd = server_fd;
     
+    // Đặt socket về non-blocking
+    int flags = fcntl(server_fd, F_GETFL, 0);
+    if (flags != -1) fcntl(server_fd, F_SETFL, flags | O_NONBLOCK);
+    
     while (keep_running) {
+        // Dùng select() chờ kết nối tối đa 1 giây để có thể thoát vòng lặp mượt mà
+        struct timeval tv;
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+        
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(server_fd, &rfds);
+        
+        int ret = select(server_fd + 1, &rfds, NULL, NULL, &tv);
+        if (ret <= 0) {
+            continue; // Hết 1 giây hoặc lỗi (EINTR), quay lại kiểm tra keep_running
+        }
+        
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
         int client_sock = accept(server_fd, (struct sockaddr*)&client_addr, &client_len);

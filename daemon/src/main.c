@@ -22,19 +22,9 @@ int global_inotify_fd = -1;
 
 void sig_handler(int signo) {
     if (signo == SIGINT || signo == SIGTERM) {
-        printf("\n[Daemon] Bắt được tín hiệu %d, đang dọn dẹp để thoát...\n", signo);
+        const char* msg = "\n[Daemon] Bắt được tín hiệu, đang dọn dẹp để thoát...\n";
+        write(STDOUT_FILENO, msg, strlen(msg));
         keep_running = 0;
-        
-        // Đánh thức luồng receiver đang bị block ở accept()
-        if (global_server_fd >= 0) {
-            shutdown(global_server_fd, SHUT_RDWR);
-        }
-        
-        // Đánh thức luồng watcher đang bị block ở read() inotify
-        if (global_inotify_fd >= 0) {
-            close(global_inotify_fd);
-            global_inotify_fd = -1;
-        }
     }
 }
 

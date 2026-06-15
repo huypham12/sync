@@ -74,10 +74,32 @@ Thao tác dừng dịch vụ:
 kill -15 $(cat /tmp/syncd.pid)
 ```
 
-## 6. Hệ thống Nhật ký (Logging)
-Hệ thống được tích hợp trình ghi nhật ký (logger) đính kèm Timestamp chuẩn `[YYYY-MM-DD HH:MM:SS]`.
-- Nếu chạy **foreground** (`--no-daemon`): In log ra màn hình Terminal.
-- Nếu chạy **Daemon**: Ghi log âm thầm vào `/tmp/syncd.log`. Dùng lệnh sau để theo dõi:
+## 6. Hệ thống Nhật ký & Lưu trữ (Logging & State)
+
+Hệ thống thiết kế 3 loại file lưu trữ chuyên biệt để quản lý tiến trình và giám sát:
+
+### 6.1. System Log (Nhật ký Hệ thống)
+Ghi nhận các luồng I/O, lỗi mạng, và tiến trình ngầm, đính kèm Timestamp `[YYYY-MM-DD HH:MM:SS]`.
+- Chạy **foreground** (`--no-daemon`): In trực tiếp ra màn hình Terminal.
+- Chạy **Daemon**: Ghi âm thầm vào `/tmp/syncd.log`. 
 ```bash
 tail -f /tmp/syncd.log
+```
+
+### 6.2. Audit Log (Nhật ký Kiểm toán)
+Ghi nhận mọi thao tác làm biến đổi dữ liệu nhằm mục đích giám sát an ninh (Security Audit). Được ghi liên tục bất kể chế độ chạy.
+- **Vị trí:** `/tmp/syncd_audit.csv`
+- **Cấu trúc:** `Thời gian, UID/Username, Thao tác, Tên File, IP nguồn, Kích thước, Mã băm SHA256`
+- **Lệnh kiểm tra:**
+```bash
+cat /tmp/syncd_audit.csv
+```
+
+### 6.3. Local State Index (Sổ bộ Trạng thái)
+File cơ sở dữ liệu thu nhỏ do daemon tự động duy trì để đối chiếu sự khác biệt (Diffing), làm cơ sở diệt tận gốc lỗi Zombie file.
+- **Vị trí:** Nằm ẩn ngay trong thư mục đang đồng bộ (Ví dụ: `~/sync_folder/.sync_state.csv`).
+- **Cấu trúc:** `Tên File, Kích thước, Mã băm SHA256`
+- **Lệnh kiểm tra:**
+```bash
+cat ~/sync_folder/.sync_state.csv
 ```

@@ -137,8 +137,12 @@ void* watcher_thread_func(void* arg) {
     int fd, wd;
     char buffer[BUF_LEN];
 
-    // Khởi tạo inotify
-    fd = inotify_init();
+    // Khởi tạo inotify (Sử dụng IN_NONBLOCK để tránh treo read)
+    fd = inotify_init1(IN_NONBLOCK);
+    if (fd < 0) {
+        // Fallback về inotify_init cũ nếu OS quá cũ
+        fd = inotify_init();
+    }
     if (fd < 0) {
         perror("inotify_init");
         return NULL;
@@ -237,12 +241,29 @@ void* watcher_thread_func(void* arg) {
     // -------------------------------------------------
 
     while (keep_running) {
+        // Dùng select() chờ sự kiện tối đa 1 giây để có thể thoát vòng lặp mượt mà
+        struct timeval tv;
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+        
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        FD_SET(fd, &rfds);
+        
+        int ret = select(fd + 1, &rfds, NULL, NULL, &tv);
+        if (ret < 0) {
+            if (!keep_running) break;
+            continue;
+        } else if (ret == 0) {
+            // Hết 1 giây không có sự kiện gì, quay lại kiểm tra keep_running
+            continue;
+        }
+
         i = 0;
         length = read(fd, buffer, BUF_LEN);
         if (length < 0) {
             if (!keep_running) break; // Thoát an toàn
-            perror("read");
-            break;
+            continue;
         }
 
         while (i < length) {
