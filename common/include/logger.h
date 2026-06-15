@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <string.h>
+#include <stdint.h>
 
 // Hàm ghi log có đính kèm Timestamp
 static inline void sync_log_print(const char* format, ...) {
