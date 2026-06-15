@@ -13,6 +13,7 @@
 #include <dirent.h>
 
 #include "../../common/include/logger.h"
+#include "../../common/include/index_manager.h"
 
 #define EVENT_SIZE  (sizeof(struct inotify_event))
 #define BUF_LEN     (1024 * (EVENT_SIZE + 16))
@@ -120,6 +121,13 @@ static void dispatch_file(WatcherConfig* config, const char* filename, SyncEvent
     
     write_audit_log(username, action_str, filename, "127.0.0.1 (local)", header.file_size, safe_hash);
     
+    if (type == EVENT_DELETE) {
+        index_remove(filename);
+    } else {
+        index_update(filename, header.file_size, header.checksum);
+    }
+    index_save();
+    
     printf("[Watcher] Dispatched event %d for %s (is_dir: %d, mode: %o)\n", type, filename, header.is_dir, header.mode & 0777);
 }
 
@@ -146,6 +154,8 @@ void* watcher_thread_func(void* arg) {
     printf("[Watcher] Luồng giám sát đã bắt đầu trên '%s'\n", config->sync_dir);
 
     // --- BƯỚC QUÉT ĐẦU TIÊN (INITIAL BASELINE SCAN) ---
+    index_init(config->sync_dir);
+    
     // 1. Chờ cho đến khi máy đối tác (Peer) online thì mới bắt đầu đẩy file
     printf("[Watcher] Đang chờ máy đích (%s:%d) online để thực hiện đồng bộ...\n", config->target_ip, config->target_port);
     while (1) {
@@ -158,21 +168,68 @@ void* watcher_thread_func(void* arg) {
     }
     printf("[Watcher] Máy đích đã online! Bắt đầu đồng bộ các file có sẵn...\n");
 
-    // 2. Quét toàn bộ file đang có sẵn trong thư mục để đẩy sang máy kia
+    // 2. Quét đối chiếu sổ bộ (Reconciliation)
     DIR *dir = opendir(config->sync_dir);
     if (dir != NULL) {
+        int index_count = 0;
+        char** index_files = index_get_all_filenames(&index_count);
+        char** visited_files = NULL;
+        int visited_count = 0;
+
         struct dirent *ent;
-        printf("[Watcher] Đang quét các file có sẵn để đồng bộ toàn phần...\n");
+        printf("[Watcher] Đang quét các file có sẵn để đối chiếu sổ bộ...\n");
         while ((ent = readdir(dir)) != NULL) {
             // Bỏ qua file ẩn, thư mục . và ..
             if (ent->d_name[0] == '.') continue;
             
             if (ent->d_type == DT_REG || ent->d_type == DT_DIR) {
-                printf("[Watcher] Tìm thấy mục cũ: %s. Đang tiến hành đẩy...\n", ent->d_name);
-                dispatch_file(config, ent->d_name, EVENT_MODIFY);
+                visited_files = realloc(visited_files, sizeof(char*) * (visited_count + 1));
+                visited_files[visited_count++] = strdup(ent->d_name);
+
+                uint64_t old_size = 0;
+                char old_hash[65] = {0};
+                char local_path[2048];
+                snprintf(local_path, sizeof(local_path), "%s/%s", config->sync_dir, ent->d_name);
+                
+                if (index_get(ent->d_name, &old_size, old_hash) != 0) {
+                    printf("[Watcher] File mới tạo offline: %s. Đang tiến hành đẩy...\n", ent->d_name);
+                    dispatch_file(config, ent->d_name, EVENT_CREATE);
+                } else {
+                    char new_hash[65] = {0};
+                    if (ent->d_type == DT_REG) {
+                        compute_sha256(local_path, new_hash);
+                        if (strcmp(old_hash, new_hash) != 0) {
+                            printf("[Watcher] File sửa offline: %s. Đang tiến hành đẩy...\n", ent->d_name);
+                            dispatch_file(config, ent->d_name, EVENT_MODIFY);
+                        }
+                    }
+                }
             }
         }
         closedir(dir);
+        
+        // 3. Tìm các file bị xóa offline (có trong sổ bộ nhưng không có trên ổ cứng)
+        for (int j = 0; j < index_count; j++) {
+            int found = 0;
+            for (int k = 0; k < visited_count; k++) {
+                if (strcmp(index_files[j], visited_files[k]) == 0) {
+                    found = 1;
+                    break;
+                }
+            }
+            if (!found) {
+                printf("[Watcher] File xóa offline: %s. Đang yêu cầu máy đích xóa...\n", index_files[j]);
+                dispatch_file(config, index_files[j], EVENT_DELETE);
+                index_remove(index_files[j]);
+            }
+            free(index_files[j]);
+        }
+        free(index_files);
+        
+        for (int k = 0; k < visited_count; k++) free(visited_files[k]);
+        if (visited_files) free(visited_files);
+        
+        index_save();
         printf("[Watcher] Quét hoàn tất. Chuyển sang chế độ theo dõi thời gian thực (Inotify).\n");
     } else {
         perror("opendir");

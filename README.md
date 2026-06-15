@@ -60,7 +60,8 @@ mkdir -p ~/sync_folder
    - Xác thực tính toàn vẹn gói tin bằng SHA-256 Checksum, phòng ngừa mất mát dữ liệu do rớt mạng.
    - Tích hợp chốt chặn mã cứng **Path Traversal**, tự động vứt bỏ bất kỳ gói tin nào giả mạo cấu trúc thư mục chứa `../` hoặc `/`.
 5. **Kháng Vòng lặp (Anti-Echo Loop):** Xử lý luồng dữ liệu 2 chiều không bị dội ngược file liên tục thông qua Hashmap Thread-safe theo dõi State Manager.
-
+6. **Xử lý Zombie File (Tombstones & Local Index):** Hệ thống duy trì sổ bộ (Local Index) ghi nhớ lịch sử file. Khi khởi động lại (Baseline Scan), daemon tự động tra cứu để tìm ra file bị xóa trong lúc offline (Tombstone) và yêu cầu đối tác xóa theo, thay vì vô tình phục hồi lại bản cũ gây hiện tượng Zombie.
+7. **Nhật ký Kiểm toán (Audit Logging):** Hệ thống ghi vết thao tác (CREATE, MODIFY, DELETE) ra file CSV kèm thông tin định danh (UID/Username), IP, SHA256 để đáp ứng yêu cầu giám sát bảo mật hệ thống.
 ## 5. Quản lý Tiến trình ngầm (Daemon & Signals)
 
 Khi chạy hệ thống ở chế độ ngầm (bỏ cờ `--no-daemon`), ứng dụng sẽ phân tách khỏi Shell (Double Fork) và hoạt động như một System Daemon thực thụ.

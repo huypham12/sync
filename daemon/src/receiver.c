@@ -12,6 +12,7 @@
 #include <arpa/inet.h>
 
 #include "../../common/include/logger.h"
+#include "../../common/include/index_manager.h"
 
 static void handle_client(int client_sock, ReceiverConfig* config, const char* peer_ip) {
     SyncHeader header;
@@ -119,6 +120,14 @@ static void handle_client(int client_sock, ReceiverConfig* config, const char* p
     safe_hash[64] = '\0';
 
     write_audit_log(username, action_str, header.file_name, peer_ip, header.file_size, safe_hash);
+
+    // Cập nhật sổ bộ (Index)
+    if (header.event_type == EVENT_DELETE) {
+        index_remove(header.file_name);
+    } else {
+        index_update(header.file_name, header.file_size, header.checksum);
+    }
+    index_save();
 
     // 3. Trì hoãn mở khoá (Delay Reset)
     // Ngủ 1 giây để các sự kiện inotify sinh ra từ thao tác lưu đĩa trôi hết khỏi Watcher

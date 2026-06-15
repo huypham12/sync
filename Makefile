@@ -11,6 +11,7 @@ DAEMON_OBJS = $(BUILD_DIR)/crypto.o \
               $(BUILD_DIR)/hashmap.o \
               $(BUILD_DIR)/network.o \
               $(BUILD_DIR)/state_manager.o \
+              $(BUILD_DIR)/index_manager.o \
               $(BUILD_DIR)/watcher.o \
               $(BUILD_DIR)/receiver.o \
               $(BUILD_DIR)/main.o
