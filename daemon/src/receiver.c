@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
 
 #include "../../common/include/logger.h"
 #include "../../common/include/index_manager.h"
