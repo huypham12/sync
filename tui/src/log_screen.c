@@ -120,7 +120,9 @@ void draw_log_screen(const char* log_file, const char* title) {
         wattroff(win_log, COLOR_PAIR(4) | A_BOLD);
     }
 
-    wrefresh(win_log);
+    wnoutrefresh(stdscr);
+    wnoutrefresh(win_log);
+    doupdate();
     
     for (int i = 0; i < g_total_lines; i++) {
         free(lines[i]);

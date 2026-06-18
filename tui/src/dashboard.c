@@ -26,8 +26,8 @@ void draw_dashboard(AppState* state) {
     for (int i = 78; i < max_x; i++) mvaddch(max_y - 1, i, ' ');
     attroff(COLOR_PAIR(6));
 
-    // Refresh stdscr first so it doesn't overwrite our boxes later
-    refresh();
+    // Queue stdscr update
+    wnoutrefresh(stdscr);
 
     // Chia tỷ lệ màn hình (Trái 40%, Phải 60%)
     int left_width = max_x * 0.4;
@@ -58,7 +58,7 @@ void draw_dashboard(AppState* state) {
         int uptime = time(NULL) - state->start_time;
         mvwprintw(win_conn, 6, 2, "Uptime : %02dh %02dm %02ds", uptime / 3600, (uptime % 3600) / 60, uptime % 60);
     }
-    wrefresh(win_conn);
+    wnoutrefresh(win_conn);
 
     // Vẽ box Metrics (Trái dưới)
     WINDOW* win_metrics = newwin(max_y - 10, left_width, 10, 0);
@@ -100,7 +100,7 @@ void draw_dashboard(AppState* state) {
         }
     }
     
-    wrefresh(win_metrics);
+    wnoutrefresh(win_metrics);
 
     // Vẽ box Recent Events (Phải trên)
     WINDOW* win_events = newwin(max_y - 11, right_width, 1, left_width);
@@ -117,7 +117,7 @@ void draw_dashboard(AppState* state) {
         int idx = (start_idx + i) % MAX_EVENTS;
         mvwprintw(win_events, 2 + i, 2, "> %s", state->recent_events[idx]);
     }
-    wrefresh(win_events);
+    wnoutrefresh(win_events);
 
     // Vẽ box Hotkeys (Phải dưới)
     WINDOW* win_hotkeys = newwin(10, right_width, max_y - 10, left_width);
@@ -136,7 +136,10 @@ void draw_dashboard(AppState* state) {
     mvwprintw(win_hotkeys, 8, 3, "q/F12: Quit TUI (Daemon keeps running)");
     wattroff(win_hotkeys, COLOR_PAIR(4));
     
-    wrefresh(win_hotkeys);
+    wnoutrefresh(win_hotkeys);
+
+    // Xóa bộ đệm và render toàn bộ ra màn hình 1 lần duy nhất (Chống nháy/flicker)
+    doupdate();
 
     // Hủy các cửa sổ (Chống leak bộ nhớ ncurses)
     delwin(win_conn);
