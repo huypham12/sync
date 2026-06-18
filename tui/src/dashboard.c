@@ -127,13 +127,13 @@ void draw_dashboard(AppState* state) {
     wattroff(win_hotkeys, COLOR_PAIR(1));
     
     wattron(win_hotkeys, COLOR_PAIR(4));
-    mvwprintw(win_hotkeys, 2, 3, "F1 : Dashboard (Hiển thị luồng công việc thời gian thực)");
-    mvwprintw(win_hotkeys, 3, 3, "F2 : Cấu hình hệ thống");
-    mvwprintw(win_hotkeys, 4, 3, "F3 : Nhật ký Kiểm toán (Audit Log)");
-    mvwprintw(win_hotkeys, 5, 3, "F4 : Nhật ký Hệ thống (Daemon Log)");
-    mvwprintw(win_hotkeys, 6, 3, "F6 : Sổ bộ Trạng thái (Index Repository)");
-    mvwprintw(win_hotkeys, 7, 3, "F7 : Giám sát Tiến trình truyền file (Mở rộng)");
-    mvwprintw(win_hotkeys, 8, 3, "q/F12: Thoát TUI (Lõi Daemon vẫn tiếp tục chạy ngầm)");
+    mvwprintw(win_hotkeys, 2, 3, "F1 : Dashboard (Real-time workflow)");
+    mvwprintw(win_hotkeys, 3, 3, "F2 : System Configuration");
+    mvwprintw(win_hotkeys, 4, 3, "F3 : Audit Log");
+    mvwprintw(win_hotkeys, 5, 3, "F4 : Daemon Log");
+    mvwprintw(win_hotkeys, 6, 3, "F6 : Index Repository State");
+    mvwprintw(win_hotkeys, 7, 3, "F7 : Live Transfer Monitor (Extended)");
+    mvwprintw(win_hotkeys, 8, 3, "q/F12: Quit TUI (Daemon keeps running)");
     wattroff(win_hotkeys, COLOR_PAIR(4));
     
     wrefresh(win_hotkeys);
