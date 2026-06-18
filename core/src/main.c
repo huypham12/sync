@@ -14,6 +14,40 @@
 #include "../include/receiver.h"
 #include "../../common/include/crypto.h"
 #include "../../common/include/logger.h"
+#include "../../common/include/app_state.h"
+#include "../../common/include/ipc.h"
+
+pthread_t thread_watcher, thread_receiver;
+pthread_t thread_ipc;
+WatcherConfig* w_config = NULL;
+ReceiverConfig* r_config = NULL;
+int threads_started = 0;
+
+void start_sync_threads(const char* folder, const char* target_ip, int port) {
+    if (threads_started) return;
+
+    w_config = malloc(sizeof(WatcherConfig));
+    strncpy(w_config->sync_dir, folder, 1023);
+    strncpy(w_config->target_ip, target_ip, 63);
+    w_config->target_port = port;
+
+    r_config = malloc(sizeof(ReceiverConfig));
+    strncpy(r_config->sync_dir, folder, 1023);
+    r_config->listen_port = port;
+
+    if (pthread_create(&thread_receiver, NULL, receiver_thread_func, r_config) != 0) {
+        perror("Failed to create receiver thread");
+        exit(EXIT_FAILURE);
+    }
+
+    if (pthread_create(&thread_watcher, NULL, watcher_thread_func, w_config) != 0) {
+        perror("Failed to create watcher thread");
+        exit(EXIT_FAILURE);
+    }
+
+    threads_started = 1;
+    printf("[Daemon] Đã khởi động luồng Watcher và Receiver.\n");
+}
 
 // Biến toàn cục phục vụ Graceful Shutdown
 volatile sig_atomic_t keep_running = 1;
@@ -69,22 +103,19 @@ void daemonize(const char* log_file) {
 }
 
 int main(int argc, char* argv[]) {
-    if (argc != 6 && argc != 7) {
-        fprintf(stderr, "Sử dụng: %s <sync_dir> <listen_port> <target_ip> <target_port> <key_path> [--no-daemon]\n", argv[0]);
-        fprintf(stderr, "Ví dụ: %s /home/user/sync 8080 node-b 8080 keys/sync_secret.key\n", argv[0]);
-        exit(EXIT_FAILURE);
+    char key_path[1024] = "keys/sync_secret.key";
+    int run_in_foreground = 0;
+
+    if (argc >= 2) {
+        if (strcmp(argv[1], "--no-daemon") == 0) {
+            run_in_foreground = 1;
+        } else {
+            strncpy(key_path, argv[1], sizeof(key_path) - 1);
+            if (argc >= 3 && strcmp(argv[2], "--no-daemon") == 0) {
+                run_in_foreground = 1;
+            }
+        }
     }
-
-    char sync_dir[1024];
-    strncpy(sync_dir, argv[1], sizeof(sync_dir) - 1);
-    int listen_port = atoi(argv[2]);
-    char target_ip[64];
-    strncpy(target_ip, argv[3], sizeof(target_ip) - 1);
-    int target_port = atoi(argv[4]);
-    char key_path[1024];
-    strncpy(key_path, argv[5], sizeof(key_path) - 1);
-
-    int run_in_foreground = (argc == 7 && strcmp(argv[6], "--no-daemon") == 0);
 
     // QUAN TRỌNG: Chống sập ứng dụng khi đầu kia rút mạng bất ngờ
     // Nếu không có dòng này, việc send() vào socket đóng sẽ bắn ra SIGPIPE giết chết tiến trình
@@ -106,49 +137,37 @@ int main(int argc, char* argv[]) {
     // Khởi tạo State Manager (Hashmap + Mutex)
     sm_init();
 
+    // Khởi tạo AppState (Phase 4)
+    app_state_init();
+
     if (!run_in_foreground) {
         // Chuyển thành Daemon và ghi log ra /var/log hoặc /tmp
         daemonize("/tmp/syncd.log");
     }
 
-    printf("\n=== SECURE SYNC DAEMON STARTED ===\n");
-    printf("Sync Dir   : %s\n", sync_dir);
-    printf("Listen Port: %d\n", listen_port);
-    printf("Target IP  : %s:%d\n", target_ip, target_port);
+    printf("\n=== SECURE SYNC DAEMON STARTED (IDLE MODE) ===\n");
+    printf("Đang chờ cấu hình qua IPC từ TUI...\n");
     fflush(stdout);
 
-    // Cấu hình tham số cho 2 luồng
-    WatcherConfig* w_config = malloc(sizeof(WatcherConfig));
-    strcpy(w_config->sync_dir, sync_dir);
-    strcpy(w_config->target_ip, target_ip);
-    w_config->target_port = target_port;
-
-    ReceiverConfig* r_config = malloc(sizeof(ReceiverConfig));
-    strcpy(r_config->sync_dir, sync_dir);
-    r_config->listen_port = listen_port;
-
-    pthread_t thread_watcher, thread_receiver;
-
-    // Khởi tạo luồng Lắng nghe mạng
-    if (pthread_create(&thread_receiver, NULL, receiver_thread_func, r_config) != 0) {
-        perror("Failed to create receiver thread");
+    // Khởi tạo luồng IPC Server để chờ cấu hình
+    if (pthread_create(&thread_ipc, NULL, ipc_server_thread, NULL) != 0) {
+        perror("Failed to create IPC server thread");
         exit(EXIT_FAILURE);
     }
 
-    // Khởi tạo luồng Theo dõi ổ cứng
-    if (pthread_create(&thread_watcher, NULL, watcher_thread_func, w_config) != 0) {
-        perror("Failed to create watcher thread");
-        exit(EXIT_FAILURE);
-    }
+    // Chờ luồng IPC thoát (khi keep_running = 0)
+    pthread_join(thread_ipc, NULL);
 
-    // Chờ 2 luồng thoát (Task 2.3)
-    pthread_join(thread_receiver, NULL);
-    pthread_join(thread_watcher, NULL);
+    if (threads_started) {
+        pthread_join(thread_receiver, NULL);
+        pthread_join(thread_watcher, NULL);
+    }
 
     printf("\n[Daemon] Dọn dẹp tài nguyên...\n");
+    app_state_destroy();
     sm_destroy();
-    free(w_config);
-    free(r_config);
+    if (w_config) free(w_config);
+    if (r_config) free(r_config);
     
     // Xóa PID file
     unlink("/tmp/syncd.pid");

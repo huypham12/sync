@@ -3,6 +3,7 @@
 #include "../../common/include/protocol.h"
 #include "../../common/include/network.h"
 #include "../../common/include/crypto.h"
+#include "../../common/include/app_state.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,6 +60,7 @@ static void handle_client(int client_sock, ReceiverConfig* config, const char* p
             // Nhận dữ liệu mã hóa ghi ra file tạm
             FILE* f = fopen(encrypted_path, "wb");
             if (f) {
+                app_state_start_transfer(header.file_name, header.file_size);
                 uint64_t remaining = header.file_size;
                 char buffer[8192];
                 while (remaining > 0) {
@@ -68,8 +70,10 @@ static void handle_client(int client_sock, ReceiverConfig* config, const char* p
                         break;
                     }
                     fwrite(buffer, 1, to_read, f);
+                    app_state_update_transfer(to_read);
                     remaining -= to_read;
                 }
+                app_state_finish_transfer();
                 fclose(f);
 
                 // 2. Giải mã file trực tiếp vào thư mục đích
@@ -112,9 +116,22 @@ static void handle_client(int client_sock, ReceiverConfig* config, const char* p
     }
 
     const char* action_str = "UNKNOWN";
-    if (header.event_type == EVENT_CREATE) action_str = "REMOTE_CREATE";
-    else if (header.event_type == EVENT_MODIFY) action_str = "REMOTE_MODIFY";
-    else if (header.event_type == EVENT_DELETE) action_str = "REMOTE_DELETE";
+    if (header.event_type == EVENT_CREATE) {
+        action_str = "REMOTE_CREATE";
+        app_state_inc_created();
+        app_state_inc_synced();
+        app_state_add_event("REMOTE CREATE %s", header.file_name);
+    } else if (header.event_type == EVENT_MODIFY) {
+        action_str = "REMOTE_MODIFY";
+        app_state_inc_updated();
+        app_state_inc_synced();
+        app_state_add_event("REMOTE MODIFY %s", header.file_name);
+    } else if (header.event_type == EVENT_DELETE) {
+        action_str = "REMOTE_DELETE";
+        app_state_inc_deleted();
+        app_state_inc_synced();
+        app_state_add_event("REMOTE DELETE %s", header.file_name);
+    }
 
     char safe_hash[65];
     memcpy(safe_hash, header.checksum, 65);

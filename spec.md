@@ -35,6 +35,7 @@ Xây dựng hệ thống Daemon (chạy nền) trên mỗi máy có khả năng 
 **Quản lý Hệ thống & Tiến trình**
 * Chạy ngầm dưới dạng Daemon hoàn chỉnh.
 * Quản lý tín hiệu hệ thống (Signal Handling) để tắt ứng dụng an toàn (Graceful Shutdown) và reload cấu hình.
+* Cung cấp giao diện người dùng trên Terminal (TUI) bằng thư viện ncurses để điều khiển (Connect/Disconnect) và giám sát trạng thái hệ thống theo thời gian thực.
 
 ## 4. Phạm vi
 
@@ -65,6 +66,14 @@ Mỗi máy sẽ chạy một cấu trúc y hệt nhau, phân lớp thành các M
 
 ```text
 +---------------------------------------------------+
+|               TUI DASHBOARD (ncurses)             |
+|   - Nhập thông số (Folder, IP, Port)              |
+|   - Hiển thị trạng thái (Connected, Sync Queue)   |
+|   - Xem Log realtime                              |
++-------------------------+-------------------------+
+                          | (Unix Domain Socket)
+                          v
++---------------------------------------------------+
 |               DAEMON NODE (PC A / PC B)           |
 +-------------------------+-------------------------+
 |        WATCHER          |        RECEIVER         |
@@ -93,66 +102,169 @@ Mỗi máy sẽ chạy một cấu trúc y hệt nhau, phân lớp thành các M
 ```
 
 ### 5.2. Cấu trúc thư mục (Directory Tree)
-Cấu trúc thư mục code ứng với mô hình mạng đối xứng (Đồng bộ 2 chiều & Mã hóa):
+Cấu trúc thư mục code ứng với mô hình mạng đối xứng và kiến trúc UI-Core tách biệt:
 
 ```text
 file-sync-service/
 ├── Makefile            # Quản lý biên dịch tự động
 ├── README.md           # Hướng dẫn build, chạy service
 ├── docs/               # Chứa file SRS, sơ đồ kiến trúc, kịch bản demo
-├── build/              # Thư mục chứa các file nhị phân sau khi biên dịch
-├── keys/               # Thư mục chứa khóa bí mật (Secret Key) để mã hóa AES
-│   └── sync_secret.key
+├── build/              # Thư mục chứa các file nhị phân
+├── keys/               # Thư mục chứa khóa bí mật (Secret Key)
 │
-├── common/             # TẦNG UTILITIES & THƯ VIỆN DÙNG CHUNG
+├── common/             # TẦNG UTILITIES & APP STATE DÙNG CHUNG
 │   ├── include/
-│   │   ├── protocol.h  # Định nghĩa cấu trúc gói tin (Message format, Header)
-│   │   ├── network.h   # Bọc các hàm socket
-│   │   ├── crypto.h    # Khai báo hàm mã hóa AES, giải mã, băm SHA256
-│   │   └── hashmap.h   # Cấu trúc dữ liệu "Trí nhớ cục bộ"
+│   │   ├── protocol.h  # Định nghĩa cấu trúc gói tin TCP
+│   │   ├── network.h   
+│   │   ├── crypto.h    
+│   │   ├── hashmap.h   
+│   │   └── app_state.h # [MỚI] Cấu trúc AppState lưu trạng thái toàn cục (Thread-safe)
 │   └── src/
 │       ├── network.c
-│       ├── crypto.c    # Dùng OpenSSL (libcrypto) để encrypt/decrypt
+│       ├── crypto.c
 │       └── hashmap.c
 │
-├── daemon/             # TẦNG NGHIỆP VỤ NODE (Chạy trên mỗi máy)
+├── core/               # TẦNG NGHIỆP VỤ ĐỒNG BỘ CHÍNH (Core Daemon)
 │   ├── include/
-│   │   ├── state_manager.h # Quản lý trạng thái file để chống lặp vô hạn
-│   │   ├── watcher.h       # Module bắt sự kiện thư mục
-│   │   └── receiver.h      # Module lắng nghe kết nối TCP
+│   │   ├── state_manager.h
+│   │   ├── watcher.h
+│   │   └── receiver.h
 │   └── src/
-│       ├── main.c          # Init Daemon, Load Key, Chạy Watcher Thread & Receiver Thread
-│       ├── state_manager.c # Thao tác với Hashmap (Trí nhớ)
-│       ├── watcher.c       # Luồng 1: Đọc -> Kiểm tra State -> Mã hóa -> Gửi
-│       └── receiver.c      # Luồng 2: Nhận -> Giải mã -> Ghi file -> Cập nhật State
+│       ├── main.c          # Init Daemon, Load Key, Chạy luồng Core & UI
+│       ├── state_manager.c # Thao tác Hashmap và update AppState
+│       ├── watcher.c       # Cập nhật AppState (Files created, deleted, modified)
+│       └── receiver.c      # Cập nhật AppState (Sync progress, connected)
 │
-└── tests/              # Kịch bản kiểm thử
+├── tui/                # TẦNG GIAO DIỆN ĐIỀU KHIỂN (ncurses)
+│   ├── include/
+│   └── src/
+│       ├── dashboard.c     # F1
+│       ├── config_screen.c # F2
+│       ├── log_screen.c    # F3 & F4
+│       ├── state_screen.c  # F6
+│       └── monitor.c       # F7 Live Sync Monitor
+│
+└── tests/
     ├── test_crypto.c
     └── test_state_manager.c
 ```
 
 ## 6. Functional Requirements (FR)
 
-* **FR-01: Khởi tạo và Cấu hình**: Hệ thống phải cho phép cấu hình qua tham số dòng lệnh hoặc file config (thư mục cần theo dõi, Port lắng nghe, IP máy đích, đường dẫn file Key mã hóa).
+* **FR-01: Khởi tạo và Cấu hình**: Hệ thống phải cho phép người dùng chọn thư mục cần theo dõi, nhập IP máy đích, Port kết nối thông qua **Giao diện TUI trực quan**.
 * **FR-02: Đồng bộ 2 chiều (Bidirectional)**: Mỗi máy phải có khả năng vừa gửi file khi có thay đổi cục bộ, vừa nhận file từ máy khác về.
 * **FR-03: Phát hiện sự kiện (File Tracking)**: Hệ thống phải phát hiện ngay lập tức các sự kiện: tạo file mới, sửa đổi nội dung, và xóa file.
 * **FR-04: Ngăn chặn vòng lặp (State Management)**: **[QUAN TRỌNG]** Khi máy A gửi file sang máy B, hệ thống trên máy B phải lưu trạng thái sự kiện này để không gửi ngược file trở lại máy A.
 * **FR-05: Bảo mật dữ liệu (Data Encryption)**: Toàn bộ dữ liệu file phải được mã hóa bằng thuật toán AES trước khi truyền qua Socket và giải mã khi nhận.
 * **FR-06: Đóng gói và Truyền tải (Transmission)**: Hệ thống phải truyền thông tin qua mạng bao gồm: Loại sự kiện (Create/Mod/Del), Tên file tương đối, Metadata (Permissions, Owner), và Nội dung đã mã hóa.
 * **FR-07: Cập nhật đích (Target Update)**: Hệ thống phải thực thi chính xác lệnh tạo, ghi đè, xóa file, hoặc phân quyền (`chmod`, `chown`) trên ổ cứng dựa theo gói tin nhận được và tạo thư mục nếu cần.
-* **FR-08: Ghi nhật ký (Logging)**: Hệ thống phải ghi log chi tiết các hoạt động ra file (ví dụ `/var/log/syncd.log`).
-* **FR-09: Quản lý Tiến trình (Daemonization)**: Hệ thống phải khởi chạy ngầm bằng cách tách khỏi terminal (fork, setsid) và ghi PID ra file để quản lý.
-* **FR-10: Xử lý Tín hiệu (Graceful Shutdown)**: Hệ thống phải bắt các tín hiệu hệ thống (`SIGTERM`, `SIGINT`) để dọn dẹp bộ nhớ, đóng socket và file descriptors trước khi thoát. Hỗ trợ tín hiệu `SIGHUP` để reload cấu hình.
-  *Ví dụ:*
-  ```text
-  [10:10:01] [INOTIFY] Detected modification on local file: report.txt
-  [10:10:01] [STATE] Event is LOCAL. Encrypting and dispatching to peer.
-  [10:10:05] [NETWORK] Incoming file: data.pdf (Size: 5MB)
-  [10:10:06] [CRYPTO] Decryption successful. File saved.
-  [10:10:06] [STATE] Updated hashmap for data.pdf (Source: NETWORK).
-  [10:10:07] [INOTIFY] Detected modification on local file: data.pdf
-  [10:10:07] [STATE] Ignored data.pdf - Echo event blocked.
-  ```
+* **FR-08: Ghi và Xem nhật ký (Logging)**: Hệ thống phải ghi log chi tiết các hoạt động ra file (`/tmp/syncd.log`, `/tmp/syncd_audit.csv`). Giao diện TUI phải có cửa sổ hiển thị Log Realtime.
+* **FR-09: Quản lý Tiến trình (Daemonization)**: Hệ thống đồng bộ (Daemon) phải chạy ngầm, không phụ thuộc vào vòng đời của giao diện TUI. Có thể tắt TUI mà tiến trình đồng bộ vẫn chạy tiếp tục.
+* **FR-10: Xử lý Tín hiệu (Graceful Shutdown)**: Hệ thống phải bắt các tín hiệu ngắt (kể cả lệnh Disconnect từ TUI) để dọn dẹp bộ nhớ, đóng socket và file descriptors trước khi thoát.
+* **FR-11: Giao diện Trung tâm Điều khiển (Control Center TUI)**: Cung cấp giao diện trực quan với `ncurses`. UI hoạt động theo nguyên tắc **CHỈ ĐỌC (Read-only)** từ một `AppState` chung (Thread-safe) mỗi 200ms để vẽ lại màn hình, tuyệt đối không gọi trực tiếp vào các hàm của Watcher/Network/Crypto. UI bao gồm các màn hình:
+  * **Main (Mặc định)**: Hiển thị tổng quan kết nối, trạng thái và Recent Events.
+  * **F1 - Dashboard**: Thống kê chi tiết Uptime, Watchers, Queue, Files đếm được.
+  * **F2 - Configuration**: Form cấu hình thay cho dòng lệnh (Sync Folder, Peer, Port, Key).
+  * **F3 - System Log**: Cuộn xem log hệ thống realtime thay cho lệnh `tail -f`.
+  * **F4 - Audit Log**: Bảng thống kê các thao tác tệp (Create, Modify, Delete).
+  * **F5 - Connection**: Bật/Tắt kết nối với Peer.
+  * **F6 - Local State Index**: Xem trực tiếp file `.sync_state.csv` (Tra cứu mã băm Hashmap).
+  * **F7 - Live Sync Monitor**: Hiển thị thanh tiến trình (Progress bar) khi truyền file.
+
+### 6.1. Thiết kế Giao diện (TUI Mockups)
+
+**Màn hình Chính (Main) - 4 Vùng chia bố cục:**
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ Secure File Sync Service v1.0                               │
+├───────────────┬──────────────────────────────────────────────┤
+│ Connection    │ Recent Events                               │
+│               │                                              │
+│ Status: ON    │ [21:35:10] CONNECT node-b                   │
+│ Peer: node-b  │ [21:35:12] CREATE report.pdf                │
+│ Port: 8080    │ [21:35:15] MODIFY config.json               │
+│ Queue: 2      │ [21:35:18] DELETE old.log                   │
+├───────────────┴──────────────────────────────────────────────┤
+│ Commands: F1 Dashboard F2 Config F3 SystemLog F4 AuditLog   │
+│           F5 Connect   F6 Disconnect   F10 Exit             │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**F1 - Dashboard:**
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ DASHBOARD                                                   │
+├──────────────────────────────────────────────────────────────┤
+│ Sync Folder : /home/huy/sync_folder                         │
+│ Peer        : 192.168.241.131                               │
+│ Status      : CONNECTED                                     │
+│ Uptime      : 01:24:12                                      │
+│ Queue       : 3                                             │
+│ Watchers    : 15                                            │
+│ AES         : ENABLED                                       │
+│ Last Sync   : 21:40:10                                      │
+├──────────────────────────────────────────────────────────────┤
+│ Files Synced : 1523                                         │
+│ Files Created: 83                                           │
+│ Files Updated: 197                                          │
+│ Files Deleted: 15                                           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**F2 - Configuration:** (Cho phép nhập text đường dẫn cơ bản)
+```text
+┌──────────────────────────────────────────┐
+│ CONFIGURATION                            │
+├──────────────────────────────────────────┤
+│ Sync Folder                              │
+│ [/home/huy/sync_folder                ]  │
+│                                          │
+│ Peer Host                               │
+│ [node-b                              ]  │
+│                                          │
+│ Listen Port                             │
+│ [8080                                ]  │
+│                                          │
+│ [ Save ] [ Connect ]                    │
+└──────────────────────────────────────────┘
+```
+
+**F3 - System Log & F4 - Audit Log:**
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ SYSTEM LOG / AUDIT LOG                                      │
+├──────────────────────────────────────────────────────────────┤
+│ [21:35:01] Service Started                                  │
+│ [21:35:02] TCP Listening on 8080                            │
+│ [21:35:10] Peer Connected                                   │
+│ 21:35:12  huy     CREATE   report.pdf                       │
+│ 21:35:15  huy     MODIFY   config.json                      │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**F6 - State Index Viewer:**
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ LOCAL STATE INDEX                                           │
+├──────────────────────────────────────────────────────────────┤
+│ report.pdf        12345 bytes    SHA256 xxxx                │
+│ config.json       542 bytes      SHA256 yyyy                │
+│ image.jpg         8 MB           SHA256 zzzz                │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**F7 - Live Sync Monitor:**
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ LIVE TRANSFER                                               │
+├──────────────────────────────────────────────────────────────┤
+│ report.pdf                                                  │
+│ [#########################-------] 78%                      │
+│                                                              │
+│ Speed: 4.2 MB/s                                             │
+│ Remaining: 2.3 sec                                          │
+└──────────────────────────────────────────────────────────────┘
+```
 
 ## 7. Non-Functional Requirements (NFR)
 
@@ -182,33 +294,34 @@ Hệ thống này sẽ sử dụng triệt để các kiến thức:
 
 **Bối cảnh:** Mở sẵn 2 máy ảo Ubuntu (hoặc 2 Terminal). Show sẵn bảng log `tail -f /var/log/syncd.log` ở cả hai bên.
 
-1. **Demo Quản lý tiến trình (Daemon & Lifecycle):**
-   * Gõ lệnh khởi chạy service: `./syncd --config /etc/syncd.conf`.
-   * Trình điều khiển trả lại dấu nhắc lệnh ngay lập tức (không treo terminal).
-   * Gõ `ps aux | grep syncd` để chứng minh tiến trình đang chạy ngầm với một PID cụ thể, chứng minh việc gọi hàm `fork()` và `setsid()` đã thành công.
+1. **Demo Quản lý tiến trình (Daemon & TUI):**
+   * Chạy lệnh khởi chạy giao diện: `./build/sync-tui`.
+   * Trên giao diện TUI, bấm `[S]` để nhập thư mục đồng bộ, nhập IP máy đối diện.
+   * Bấm `[C]` để Connect. Trạng thái TUI chuyển thành `CONNECTED`, Daemon phía dưới nền bắt đầu chạy.
+   * Bấm `[Q]` tắt TUI, gõ `ps aux | grep syncd` để chứng minh Daemon vẫn chạy ngầm an toàn, sau đó bật lại TUI trạng thái vẫn được nạp lại.
 
 2. **Demo Đồng bộ 2 chiều tức thời:**
-   * Tạo file `test.txt` ở máy A → Máy B có ngay lập tức.
-   * Mở file đó trên máy B, gõ "Hello from B" → Máy A nhận được update.
+   * Tạo file `test.txt` ở máy A → Khung `Recent Events` trên TUI của máy A và máy B lập tức nhảy log. Số đếm `Files Synced` tăng lên.
+   * Mở file đó trên máy B, gõ "Hello from B" → Khung log TUI máy A nhận được update.
    * Xóa file ở A → Máy B mất file.
 
 3. **Demo "Chặn lặp vô hạn" (State Manager):**
-   * Chỉ vào bảng Log của máy B giải thích: Khi máy B nhận file từ mạng, inotify của ổ cứng B báo sự kiện sửa file, nhưng tiến trình State Manager đã check Hash Map, phát hiện đây là file từ mạng nên block lại, không gửi dội ngược về A.
+   * Chỉ vào khung Log trên TUI của máy B giải thích: Khi máy B nhận file từ mạng, inotify của ổ cứng B báo sự kiện sửa file, nhưng tiến trình State Manager đã check Hash Map, phát hiện đây là file từ mạng nên block lại, hiển thị log `Echo event blocked` và không gửi dội ngược về A.
 
 4. **Demo Quản lý File (Metadata Sync):**
    * Tại Node A, gõ lệnh `chmod 400 secret.txt`.
-   * Sang Node B, gõ lệnh `ls -l`. Hệ thống sẽ hiển thị file `secret.txt` cũng đã được đổi quyền thành `-r--------`.
+   * Sang Node B, gõ lệnh `ls -l`. Hệ thống sẽ hiển thị file `secret.txt` cũng đã được đổi quyền thành `-r--------`. TUI hiển thị sự kiện update Metadata.
    * Giải thích việc sử dụng `stat()` đóng gói vào mạng và dùng `chmod()` để áp dụng tại máy nhận.
 
 5. **Demo Bảo mật (Mã hóa gói tin):**
    * Bật Wireshark bắt gói tin TCP.
    * Ghi chữ "MAT KHAU LA 123" vào file trên A.
    * Wireshark chỉ bắt được chuỗi byte vô nghĩa (đã mã hóa AES-256).
-   * Máy B nhận được file, giải mã và hiển thị nội dung gốc.
+   * Máy B nhận được file, giải mã và hiển thị nội dung gốc trên đĩa.
 
-6. **Demo Quản lý Tín hiệu (Graceful Shutdown):**
-   * Gõ `kill -15 <PID_của_Node_A>` (gửi tín hiệu SIGTERM).
-   * Trỏ vào Log của Node A: Sẽ thấy dòng log nhận tín hiệu SIGTERM, sau đó dọn dẹp TCP, Hashmap, đóng các File Descriptor và thoát an toàn.
+6. **Demo Quản lý Tín hiệu (Graceful Shutdown qua TUI):**
+   * Trên giao diện TUI của Node A, bấm `[D]` để Disconnect. TUI gửi tín hiệu ngắt `SIGTERM` hoặc lệnh IPC qua cho Daemon.
+   * Trỏ vào cửa sổ Log trên TUI: Sẽ thấy dòng log nhận tín hiệu tắt, sau đó dọn dẹp TCP, Hashmap, đóng các File Descriptor và thoát an toàn. Trạng thái TUI chuyển về `DISCONNECTED`.
 
 **Tổng kết:**
 Luồng kiến trúc: `Directory Watcher` $\rightarrow$ `Mutex/Thread` $\rightarrow$ `Hash Map State` $\rightarrow$ `Crypto` $\rightarrow$ `Socket TCP`.

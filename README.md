@@ -1,105 +1,78 @@
 # Secure Bidirectional File Synchronization Service
 
-Đây là hệ thống Daemon (chạy ngầm) đồng bộ thư mục hai chiều bảo mật giữa hai máy tính Ubuntu (hoặc Linux) thông qua giao thức TCP. Toàn bộ nội dung file được mã hóa AES-256 trước khi gửi và giải mã khi nhận. Cơ chế State Manager thông minh giúp chặn đứng triệt để lỗi vòng lặp dội ngược (Infinite Echo Loop).
+Đây là hệ thống đồng bộ thư mục hai chiều bảo mật giữa hai máy tính Ubuntu (Linux) thông qua giao thức TCP. Toàn bộ nội dung file được mã hóa AES-256 trước khi gửi và giải mã khi nhận. Cơ chế State Manager thông minh giúp chặn đứng triệt để lỗi vòng lặp dội ngược (Infinite Echo Loop).
 
-Dự án này là một **System Service** hoàn chỉnh, triển khai thực tế các kỹ thuật System Programming tiên tiến trên Linux (Process Management, OS Signals, File System API, TCP Sockets).
+Phiên bản mới nhất đã được nâng cấp kiến trúc **Client - Server (Daemon + TUI)**, cho phép quản lý toàn bộ hệ thống thông qua giao diện dòng lệnh trực quan (Control Center) được thiết kế bằng thư viện `ncurses`.
 
-## 1. Yêu cầu hệ thống (Prerequisites)
+## 1. Yêu cầu hệ thống
 - **Hệ điều hành:** Linux/Ubuntu.
 - **Trình biên dịch:** `gcc`, `make`.
-- **Thư viện:** OpenSSL (dùng cho Crypto) và pthread.
+- **Thư viện:** OpenSSL (`libssl-dev`), ncurses (`libncurses5-dev`, `libncursesw5-dev`) và pthread.
+
 ```bash
 sudo apt-get update
-sudo apt-get install build-essential libssl-dev
+sudo apt-get install build-essential libssl-dev libncurses5-dev libncursesw5-dev
 ```
 
 ## 2. Biên dịch dự án
 Tại thư mục gốc của dự án, chạy lệnh `make` để tiến hành biên dịch:
 ```bash
-make all
+make
 ```
-*Kết quả:* File thực thi sẽ được tạo ra tại `build/syncd`.
+*Kết quả:* Sẽ tạo ra 2 file thực thi tại thư mục `build/`:
+- `build/syncd`: Lõi đồng bộ (Daemon / Server).
+- `build/sync-tui`: Giao diện điều khiển (Client).
 
 ## 3. Cấu hình và Chạy hệ thống
-Cú pháp lệnh để chạy service:
+
+Hệ thống hoạt động theo mô hình tách biệt lõi và giao diện. Bạn cần khởi chạy lõi trước, sau đó bật giao diện để kết nối.
+
+### Bước 1: Khởi chạy Core Daemon
+Cú pháp: `./build/syncd [key_path] [--no-daemon]`
+- `[key_path]`: Đường dẫn tới file chứa Secret Key mã hóa (Mặc định: `keys/sync_secret.key`).
+- `[--no-daemon]`: Tùy chọn chạy nổi trên Terminal để dễ debug (mặc định daemon sẽ chạy ngầm).
+
 ```bash
-./build/syncd <thư_mục_đồng_bộ> <port_lắng_nghe> <ip_đích> <port_đích> <file_key> [--no-daemon]
+# Khởi chạy daemon ở chế độ ngầm
+./build/syncd keys/sync_secret.key
 ```
-- `<thư_mục_đồng_bộ>`: Đường dẫn tuyệt đối tới thư mục bạn muốn theo dõi.
-- `<port_lắng_nghe>`: Port TCP mở trên máy này để nhận file.
-- `<ip_đích>`: Địa chỉ IP/Tên miền của máy bên kia.
-- `<port_đích>`: Port TCP của máy bên kia.
-- `<file_key>`: Đường dẫn tới file chứa Secret Key mã hóa (mặc định đã có ở `keys/sync_secret.key`).
-- `--no-daemon` (Tùy chọn): Chạy nổi trên Terminal thay vì chạy ngầm (hữu ích khi demo/debug).
+*Lúc này, Daemon sẽ ở trạng thái IDLE và chờ cấu hình từ giao diện.*
 
-### Kịch bản chạy trên 2 máy ảo (Node A và Node B)
-
-*Cấu hình mạng (đã được cấu hình trong `/etc/hosts`):*
-- Node A (`node-a`): `192.168.241.134`
-- Node B (`node-b`): `192.168.241.131`
-
-**Tại máy Node B (`node-b`) - Chạy trước để mở Port lắng nghe:**
+### Bước 2: Khởi chạy Giao diện Điều khiển (TUI)
+Chạy lệnh sau để mở Control Center:
 ```bash
-mkdir -p ~/sync_folder
-./build/syncd ~/sync_folder 8080 node-a 8080 keys/sync_secret.key --no-daemon
+./build/sync-tui
 ```
 
-**Tại máy Node A (`node-a`):**
-```bash
-mkdir -p ~/sync_folder
-./build/syncd ~/sync_folder 8080 node-b 8080 keys/sync_secret.key --no-daemon
-```
+### Bước 3: Thiết lập qua Giao diện
+1. Tại màn hình chính của TUI, nhấn phím **F2** để mở hộp thoại Cấu hình.
+2. Nhập các thông tin:
+   - **Sync Folder:** Đường dẫn thư mục cần đồng bộ (ví dụ: `/home/user/sync`).
+   - **Target IP:** Địa chỉ IP của máy đích (ví dụ: `192.168.1.100`).
+   - **Target Port:** Port kết nối (ví dụ: `8080`).
+3. Nhấn **ENTER** để lưu và truyền cấu hình xuống Daemon. Trạng thái sẽ chuyển sang **CONNECTED** và quá trình đồng bộ tự động bắt đầu.
+
+> **Các phím chức năng trên TUI:**
+> - `F1`: Dashboard (Hiển thị luồng công việc thời gian thực)
+> - `F2`: Cấu hình hệ thống
+> - `F3`: Nhật ký Kiểm toán (Audit Log)
+> - `F4`: Nhật ký Hệ thống (Daemon Log)
+> - `F6`: Sổ bộ Trạng thái (Index Repository)
+> - `F7`: Giám sát Tiến trình truyền file (Live Transfer Monitor)
+> - `F10`: Thoát TUI (Lõi Daemon vẫn tiếp tục chạy ngầm)
 
 ## 4. Các tính năng cốt lõi (Core Features)
 
-1. **Đồng bộ 2 chiều tức thời:** Tự động đẩy các thao tác tạo mới, chỉnh sửa, xóa file/thư mục qua máy đích chỉ trong chưa tới 1 giây.
-2. **Bảo toàn Siêu dữ liệu (Metadata):** Khi một máy gõ lệnh thay đổi quyền truy cập của file/thư mục (ví dụ `chmod +x script.sh`), tiến trình inotify sẽ bắt sự kiện đóng gói siêu dữ liệu này, chuyển qua mạng và máy nhận tự động gọi lệnh `chmod()` để cấp đúng quyền tương tự. 
-3. **Quản lý Thư mục con (Directory Sync):** Hỗ trợ nhận diện và tạo mới thư mục con rỗng thông qua mạng. *(Lưu ý: Tính năng giám sát Inotify hiện tại là giám sát phẳng Non-recursive. Để đồng bộ an toàn, hãy thao tác tạo thư mục mới trước, sau đó mới thả file vào trong thư mục đó).*
-4. **Bảo mật tuyệt đối:** 
-   - Mã hóa AES-256 toàn trình qua mạng TCP.
-   - Xác thực tính toàn vẹn gói tin bằng SHA-256 Checksum, phòng ngừa mất mát dữ liệu do rớt mạng.
-   - Tích hợp chốt chặn mã cứng **Path Traversal**, tự động vứt bỏ bất kỳ gói tin nào giả mạo cấu trúc thư mục chứa `../` hoặc `/`.
-5. **Kháng Vòng lặp (Anti-Echo Loop):** Xử lý luồng dữ liệu 2 chiều không bị dội ngược file liên tục thông qua Hashmap Thread-safe theo dõi State Manager.
-6. **Xử lý Zombie File (Tombstones & Local Index):** Hệ thống duy trì sổ bộ (Local Index) ghi nhớ lịch sử file. Khi khởi động lại (Baseline Scan), daemon tự động tra cứu để tìm ra file bị xóa trong lúc offline (Tombstone) và yêu cầu đối tác xóa theo, thay vì vô tình phục hồi lại bản cũ gây hiện tượng Zombie.
-7. **Nhật ký Kiểm toán (Audit Logging):** Hệ thống ghi vết thao tác (CREATE, MODIFY, DELETE) ra file CSV kèm thông tin định danh (UID/Username), IP, SHA256 để đáp ứng yêu cầu giám sát bảo mật hệ thống.
-## 5. Quản lý Tiến trình ngầm (Daemon & Signals)
+1. **Kiến trúc TUI Hiện đại:** Giao diện trực quan cho phép giám sát thông số thời gian thực, quản lý log và điều khiển cấu hình linh hoạt thông qua Unix Domain Sockets (IPC).
+2. **Đồng bộ 2 chiều tức thời:** Tự động đẩy các thao tác tạo mới, chỉnh sửa, xóa file/thư mục thông qua Inotify API.
+3. **Bảo mật mạnh mẽ:** Mã hóa dữ liệu bằng AES-256 toàn trình. Xác thực tính toàn vẹn bằng SHA-256 Checksum, phòng ngừa mất mát dữ liệu do rớt mạng và chống lại tấn công Path Traversal.
+4. **Kháng Vòng lặp (Anti-Echo Loop):** Xử lý luồng dữ liệu 2 chiều không bị dội ngược file liên tục thông qua Hashmap Thread-safe theo dõi State Manager.
+5. **Xử lý Zombie File (Tombstones & Local Index):** Hệ thống duy trì sổ bộ (Local Index) ghi nhớ lịch sử file để đồng bộ chính xác dữ liệu bị xóa lúc offline.
+6. **Nhật ký Kiểm toán (Audit Logging):** Ghi vết thao tác (CREATE, MODIFY, DELETE) ra file CSV kèm thông tin định danh (UID/Username), IP, SHA256.
 
-Khi chạy hệ thống ở chế độ ngầm (bỏ cờ `--no-daemon`), ứng dụng sẽ phân tách khỏi Shell (Double Fork) và hoạt động như một System Daemon thực thụ.
-
-- **PID File**: Tiến trình lưu giữ ID thực thi của chính nó vào file `/tmp/syncd.pid`.
-- **Thoát an toàn (Graceful Shutdown)**: Hệ thống lắng nghe các tín hiệu của hệ điều hành như `SIGINT` (Ctrl+C) và `SIGTERM`. Khi có tín hiệu tắt, nó sẽ đánh thức các luồng I/O đang nghẽn (Block), dọn dẹp Hashmap, giải phóng RAM, ngắt các cổng mạng và tự động xóa bỏ PID file để thoát một cách sạch sẽ nhất.
-  
-Thao tác dừng dịch vụ:
+## 5. Dừng Dịch vụ (Graceful Shutdown)
+Khi chạy ở chế độ nền, lõi Daemon tự động lưu giữ PID tại `/tmp/syncd.pid`. 
+Để dừng hoàn toàn dịch vụ một cách an toàn (dọn dẹp bộ nhớ, ngắt kết nối mạng):
 ```bash
 kill -15 $(cat /tmp/syncd.pid)
-```
-
-## 6. Hệ thống Nhật ký & Lưu trữ (Logging & State)
-
-Hệ thống thiết kế 3 loại file lưu trữ chuyên biệt để quản lý tiến trình và giám sát:
-
-### 6.1. System Log (Nhật ký Hệ thống)
-Ghi nhận các luồng I/O, lỗi mạng, và tiến trình ngầm, đính kèm Timestamp `[YYYY-MM-DD HH:MM:SS]`.
-- Chạy **foreground** (`--no-daemon`): In trực tiếp ra màn hình Terminal.
-- Chạy **Daemon**: Ghi âm thầm vào `/tmp/syncd.log`. 
-```bash
-tail -f /tmp/syncd.log
-```
-
-### 6.2. Audit Log (Nhật ký Kiểm toán)
-Ghi nhận mọi thao tác làm biến đổi dữ liệu nhằm mục đích giám sát an ninh (Security Audit). Được ghi liên tục bất kể chế độ chạy.
-- **Vị trí:** `/tmp/syncd_audit.csv`
-- **Cấu trúc:** `Thời gian, UID/Username, Thao tác, Tên File, IP nguồn, Kích thước, Mã băm SHA256`
-- **Lệnh kiểm tra:**
-```bash
-cat /tmp/syncd_audit.csv
-```
-
-### 6.3. Local State Index (Sổ bộ Trạng thái)
-File cơ sở dữ liệu thu nhỏ do daemon tự động duy trì để đối chiếu sự khác biệt (Diffing), làm cơ sở diệt tận gốc lỗi Zombie file.
-- **Vị trí:** Nằm ẩn ngay trong thư mục đang đồng bộ (Ví dụ: `~/sync_folder/.sync_state.csv`).
-- **Cấu trúc:** `Tên File, Kích thước, Mã băm SHA256`
-- **Lệnh kiểm tra:**
-```bash
-cat ~/sync_folder/.sync_state.csv
 ```

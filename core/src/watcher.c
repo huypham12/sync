@@ -3,6 +3,7 @@
 #include "../../common/include/protocol.h"
 #include "../../common/include/network.h"
 #include "../../common/include/crypto.h"
+#include "../../common/include/app_state.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -86,13 +87,16 @@ static void dispatch_file(WatcherConfig* config, const char* filename, SyncEvent
     if ((type == EVENT_MODIFY || type == EVENT_CREATE) && header.is_dir == 0) {
         FILE* f = fopen(encrypted_path, "rb");
         if (f) {
+            app_state_start_transfer(filename, header.file_size);
             char buffer[8192];
             size_t bytes_read;
             while ((bytes_read = fread(buffer, 1, sizeof(buffer), f)) > 0) {
                 if (net_send_exact(sock, buffer, bytes_read) < 0) {
                     break;
                 }
+                app_state_update_transfer(bytes_read);
             }
+            app_state_finish_transfer();
             fclose(f);
             unlink(encrypted_path); // Xóa file tạm
         }
@@ -111,9 +115,22 @@ static void dispatch_file(WatcherConfig* config, const char* filename, SyncEvent
     }
     
     const char* action_str = "UNKNOWN";
-    if (type == EVENT_CREATE) action_str = "CREATE";
-    else if (type == EVENT_MODIFY) action_str = "MODIFY";
-    else if (type == EVENT_DELETE) action_str = "DELETE";
+    if (type == EVENT_CREATE) {
+        action_str = "CREATE";
+        app_state_inc_created();
+        app_state_inc_synced();
+        app_state_add_event("LOCAL CREATE %s", filename);
+    } else if (type == EVENT_MODIFY) {
+        action_str = "MODIFY";
+        app_state_inc_updated();
+        app_state_inc_synced();
+        app_state_add_event("LOCAL MODIFY %s", filename);
+    } else if (type == EVENT_DELETE) {
+        action_str = "DELETE";
+        app_state_inc_deleted();
+        app_state_inc_synced();
+        app_state_add_event("LOCAL DELETE %s", filename);
+    }
 
     char safe_hash[65];
     memcpy(safe_hash, header.checksum, 65);
