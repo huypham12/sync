@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <unistd.h>
 
 static FIELD *field[4];
 static FORM  *my_form;
@@ -33,12 +34,35 @@ void init_config_form(AppState* state) {
         field_opts_off(field[i], O_AUTOSKIP);
     }
 
-    if (state->sync_folder[0]) set_field_buffer(field[0], 0, state->sync_folder);
-    if (state->peer_host[0]) set_field_buffer(field[1], 0, state->peer_host);
+    if (state->sync_folder[0]) {
+        set_field_buffer(field[0], 0, state->sync_folder);
+    } else {
+        set_field_buffer(field[0], 0, "/home/huy/sync_folder");
+    }
+    
+    if (state->peer_host[0]) {
+        set_field_buffer(field[1], 0, state->peer_host);
+    } else {
+        char hostname[256];
+        if (gethostname(hostname, sizeof(hostname)) == 0) {
+            // Nếu đang chạy trên máy -b (ubuntu-desktop-b), thì đích sẽ là máy a
+            if (strstr(hostname, "-b") != NULL || strstr(hostname, "node-b") != NULL) {
+                set_field_buffer(field[1], 0, "192.168.241.134"); // IP của node-a
+            } else {
+                // Ngược lại (chạy trên ubuntu-desktop / node-a), đích sẽ là máy b
+                set_field_buffer(field[1], 0, "192.168.241.131"); // IP của node-b
+            }
+        } else {
+            set_field_buffer(field[1], 0, "192.168.241.131"); // Fallback
+        }
+    }
+    
     if (state->peer_port > 0) {
         char port_str[16];
         sprintf(port_str, "%d", state->peer_port);
         set_field_buffer(field[2], 0, port_str);
+    } else {
+        set_field_buffer(field[2], 0, "8080");
     }
 
     my_form = new_form(field);
@@ -57,6 +81,10 @@ void init_config_form(AppState* state) {
     box(cfg_form_win, 0, 0);
     mvwprintw(cfg_form_win, 0, 2, " DAEMON CONFIGURATION ");
     wattroff(cfg_form_win, COLOR_PAIR(1));
+
+    wattron(cfg_form_win, COLOR_PAIR(5));
+    mvwprintw(cfg_form_win, 2, 2, " Please enter connection details (Defaults provided): ");
+    wattroff(cfg_form_win, COLOR_PAIR(5));
 
     // cfg_form_sub is at y=2, x=1 relative to cfg_form_win.
     // field 0 is at y=2, x=15 in cfg_form_sub, so y=4, x=16 in cfg_form_win.
