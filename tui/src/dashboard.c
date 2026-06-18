@@ -11,10 +11,23 @@ void draw_dashboard(AppState* state) {
     erase();
 
     // 1. Tiêu đề
-    attron(A_BOLD);
-    mvprintw(0, 2, "SECURE FILE SYNC SERVICE v1.0 - CONTROL CENTER");
-    attroff(A_BOLD);
+    attron(A_BOLD | COLOR_PAIR(5));
+    mvprintw(0, 0, " SECURE FILE SYNC SERVICE v1.0 - CONTROL CENTER ");
+    // clear to end of line with same color
+    for (int i = 48; i < max_x; i++) mvaddch(0, i, ' ');
+    attroff(A_BOLD | COLOR_PAIR(5));
+
+    attron(COLOR_PAIR(4));
     mvprintw(0, max_x - 30, "Press F2: Config | F10: Quit");
+    attroff(COLOR_PAIR(4));
+
+    attron(COLOR_PAIR(6));
+    mvprintw(max_y - 1, 0, " F1:Dash | F2:Conf | F3:Audit | F4:D-Log | F6:Index | F7:Monitor | F10:Quit ");
+    for (int i = 78; i < max_x; i++) mvaddch(max_y - 1, i, ' ');
+    attroff(COLOR_PAIR(6));
+
+    // Refresh stdscr first so it doesn't overwrite our boxes later
+    refresh();
 
     // Chia tỷ lệ màn hình (Trái 40%, Phải 60%)
     int left_width = max_x * 0.4;
@@ -22,13 +35,19 @@ void draw_dashboard(AppState* state) {
 
     // Vẽ box Connection (Trái trên)
     WINDOW* win_conn = newwin(9, left_width, 1, 0);
+    wattron(win_conn, COLOR_PAIR(1));
     box(win_conn, 0, 0);
     mvwprintw(win_conn, 0, 2, "[ Connection & Status ]");
+    wattroff(win_conn, COLOR_PAIR(1));
     
     if (state->status == STATE_CONNECTED) {
+        wattron(win_conn, COLOR_PAIR(2) | A_BOLD);
         mvwprintw(win_conn, 2, 2, "Status : CONNECTED");
+        wattroff(win_conn, COLOR_PAIR(2) | A_BOLD);
     } else {
+        wattron(win_conn, COLOR_PAIR(3) | A_BOLD);
         mvwprintw(win_conn, 2, 2, "Status : IDLE");
+        wattroff(win_conn, COLOR_PAIR(3) | A_BOLD);
     }
     
     mvwprintw(win_conn, 3, 2, "Target : %s:%d", state->peer_host[0] ? state->peer_host : "None", state->peer_port);
@@ -43,9 +62,15 @@ void draw_dashboard(AppState* state) {
 
     // Vẽ box Metrics (Trái dưới)
     WINDOW* win_metrics = newwin(max_y - 10, left_width, 10, 0);
+    wattron(win_metrics, COLOR_PAIR(1));
     box(win_metrics, 0, 0);
     mvwprintw(win_metrics, 0, 2, "[ Metrics ]");
-    mvwprintw(win_metrics, 2, 2, "Files Synced : %llu", (unsigned long long)state->files_synced);
+    wattroff(win_metrics, COLOR_PAIR(1));
+    
+    mvwprintw(win_metrics, 2, 2, "Files Synced : ");
+    wattron(win_metrics, COLOR_PAIR(2));
+    wprintw(win_metrics, "%llu", (unsigned long long)state->files_synced);
+    wattroff(win_metrics, COLOR_PAIR(2));
     mvwprintw(win_metrics, 3, 2, "Files Created: %llu", (unsigned long long)state->files_created);
     mvwprintw(win_metrics, 4, 2, "Files Updated: %llu", (unsigned long long)state->files_updated);
     mvwprintw(win_metrics, 5, 2, "Files Deleted: %llu", (unsigned long long)state->files_deleted);
@@ -54,8 +79,10 @@ void draw_dashboard(AppState* state) {
 
     // Vẽ box Recent Events (Phải)
     WINDOW* win_events = newwin(max_y - 1, right_width, 1, left_width);
+    wattron(win_events, COLOR_PAIR(1));
     box(win_events, 0, 0);
     mvwprintw(win_events, 0, 2, "[ Recent Events ]");
+    wattroff(win_events, COLOR_PAIR(1));
     
     // In các sự kiện (Vòng lặp từ cũ đến mới trong circular buffer)
     int count = (state->total_events < MAX_EVENTS) ? state->total_events : MAX_EVENTS;
@@ -66,10 +93,6 @@ void draw_dashboard(AppState* state) {
         mvwprintw(win_events, 2 + i, 2, "> %s", state->recent_events[idx]);
     }
     wrefresh(win_events);
-
-    // Cập nhật lại stdscr để không bị đè menu dưới
-    mvprintw(max_y - 1, 0, " F1:Dash | F2:Conf | F3:Audit | F4:D-Log | F6:Index | F7:Monitor | F10:Quit ");
-    refresh();
 
     // Hủy các cửa sổ (Chống leak bộ nhớ ncurses)
     delwin(win_conn);

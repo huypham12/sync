@@ -15,6 +15,17 @@ int main() {
     timeout(200); // Chờ phím tối đa 200ms
     curs_set(0);  // Ẩn con trỏ
 
+    if (has_colors()) {
+        start_color();
+        // Define color pairs
+        init_pair(1, COLOR_CYAN, COLOR_BLACK);   // Borders and Box titles
+        init_pair(2, COLOR_GREEN, COLOR_BLACK);  // Success / Connected
+        init_pair(3, COLOR_RED, COLOR_BLACK);    // Errors / Disconnected
+        init_pair(4, COLOR_YELLOW, COLOR_BLACK); // Highlights / Warnings
+        init_pair(5, COLOR_WHITE, COLOR_BLUE);   // Header / Title bar
+        init_pair(6, COLOR_BLACK, COLOR_CYAN);   // Footer / Menu bar
+    }
+
     AppState state;
     int keep_running = 1;
 

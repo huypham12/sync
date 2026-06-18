@@ -53,16 +53,30 @@ void init_config_form(AppState* state) {
     cfg_form_sub = derwin(cfg_form_win, 11, 58, 2, 1);
     set_form_sub(my_form, cfg_form_sub);
 
+    wattron(cfg_form_win, COLOR_PAIR(1));
     box(cfg_form_win, 0, 0);
     mvwprintw(cfg_form_win, 0, 2, " DAEMON CONFIGURATION ");
-    mvwprintw(cfg_form_sub, 2, 2, "Sync Folder:");
-    mvwprintw(cfg_form_sub, 4, 2, "Target IP  :");
-    mvwprintw(cfg_form_sub, 6, 2, "Target Port:");
+    wattroff(cfg_form_win, COLOR_PAIR(1));
+
+    // cfg_form_sub is at y=2, x=1 relative to cfg_form_win.
+    // field 0 is at y=2, x=15 in cfg_form_sub, so y=4, x=16 in cfg_form_win.
+    // We print labels at y=4, 6, 8, x=3 in cfg_form_win.
+    wattron(cfg_form_win, COLOR_PAIR(4) | A_BOLD);
+    mvwprintw(cfg_form_win, 4, 3, "Sync Folder:");
+    mvwprintw(cfg_form_win, 6, 3, "Target IP  :");
+    mvwprintw(cfg_form_win, 8, 3, "Target Port:");
+    wattroff(cfg_form_win, COLOR_PAIR(4) | A_BOLD);
+    
+    wattron(cfg_form_win, COLOR_PAIR(6));
     mvwprintw(cfg_form_win, 13, 2, " [ENTER] Save & Start | [ESC] Cancel ");
+    for (int i = 39; i < 58; i++) mvwaddch(cfg_form_win, 13, i, ' ');
+    wattroff(cfg_form_win, COLOR_PAIR(6));
 
     post_form(my_form);
+    pos_form_cursor(my_form);
     wrefresh(cfg_form_win);
     config_active = 1;
+    curs_set(1); // Hiện con trỏ khi ở màn hình config
 }
 
 void destroy_config_form() {
@@ -74,6 +88,7 @@ void destroy_config_form() {
     delwin(cfg_form_sub);
     delwin(cfg_form_win);
     config_active = 0;
+    curs_set(0); // Ẩn con trỏ khi thoát màn hình config
 }
 
 void draw_config_screen(AppState* state) {
@@ -84,6 +99,7 @@ void draw_config_screen(AppState* state) {
         init_config_form(state);
     } else {
         // Redraw around the form if needed, but form is mostly static until input
+        pos_form_cursor(my_form);
         wrefresh(cfg_form_win);
     }
 }
