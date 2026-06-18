@@ -46,7 +46,7 @@ void start_sync_threads(const char* folder, const char* target_ip, int port) {
     }
 
     threads_started = 1;
-    printf("[Daemon] Đã khởi động luồng Watcher và Receiver.\n");
+    printf("[Daemon] Watcher and Receiver threads started.\n");
 }
 
 // Biến toàn cục phục vụ Graceful Shutdown
@@ -56,7 +56,7 @@ int global_inotify_fd = -1;
 
 void sig_handler(int signo) {
     if (signo == SIGINT || signo == SIGTERM) {
-        const char* msg = "\n[Daemon] Bắt được tín hiệu, đang dọn dẹp để thoát...\n";
+        const char* msg = "\n[Daemon] Caught signal, cleaning up to exit...\n";
         write(STDOUT_FILENO, msg, strlen(msg));
         keep_running = 0;
     }
@@ -130,7 +130,7 @@ int main(int argc, char* argv[]) {
 
     // Khởi tạo Crypto và đọc Key
     if (crypto_init(key_path) != 0) {
-        fprintf(stderr, "Lỗi: Không thể khởi tạo Crypto với file key: %s\n", key_path);
+        fprintf(stderr, "Error: Cannot initialize Crypto with key file: %s\n", key_path);
         exit(EXIT_FAILURE);
     }
 
@@ -146,7 +146,7 @@ int main(int argc, char* argv[]) {
     }
 
     printf("\n=== SECURE SYNC DAEMON STARTED (IDLE MODE) ===\n");
-    printf("Đang chờ cấu hình qua IPC từ TUI...\n");
+    printf("Waiting for configuration via IPC from TUI...\n");
     fflush(stdout);
 
     // Khởi tạo luồng IPC Server để chờ cấu hình
@@ -163,7 +163,7 @@ int main(int argc, char* argv[]) {
         pthread_join(thread_watcher, NULL);
     }
 
-    printf("\n[Daemon] Dọn dẹp tài nguyên...\n");
+    printf("\n[Daemon] Cleaning up resources...\n");
     app_state_destroy();
     sm_destroy();
     if (w_config) free(w_config);

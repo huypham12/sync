@@ -42,7 +42,7 @@ void* ipc_server_thread(void* arg) {
         return NULL;
     }
 
-    printf("[IPC Server] Đang lắng nghe tại %s\n", IPC_SOCKET_PATH);
+    printf("[IPC Server] Listening at %s\n", IPC_SOCKET_PATH);
 
     while (keep_running) {
         struct timeval tv;
@@ -77,7 +77,7 @@ void* ipc_server_thread(void* arg) {
                 req.target_ip[63] = '\0';
 
                 // TUI gửi cấu hình để bắt đầu đồng bộ
-                printf("[IPC Server] Nhận lệnh CMD_CONNECT: Thư mục=%s, Đích=%s:%d\n", req.sync_folder, req.target_ip, req.port);
+                printf("[IPC Server] Received CMD_CONNECT: Folder=%s, Target=%s:%d\n", req.sync_folder, req.target_ip, req.port);
                 
                 // Cập nhật AppState
                 app_state_set_config(req.sync_folder, req.target_ip, req.port);
@@ -96,6 +96,6 @@ void* ipc_server_thread(void* arg) {
 
     close(server_sock);
     unlink(IPC_SOCKET_PATH);
-    printf("[IPC Server] Đã đóng.\n");
+    printf("[IPC Server] Closed.\n");
     return NULL;
 }

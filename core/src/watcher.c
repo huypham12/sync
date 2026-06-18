@@ -172,24 +172,24 @@ void* watcher_thread_func(void* arg) {
         return NULL;
     }
 
-    printf("[Watcher] Luồng giám sát đã bắt đầu trên '%s'\n", config->sync_dir);
+    printf("[Watcher] Monitoring thread started on '%s'\n", config->sync_dir);
 
-    // --- BƯỚC QUÉT ĐẦU TIÊN (INITIAL BASELINE SCAN) ---
+    // --- INITIAL BASELINE SCAN ---
     index_init(config->sync_dir);
     
-    // 1. Chờ cho đến khi máy đối tác (Peer) online thì mới bắt đầu đẩy file
-    printf("[Watcher] Đang chờ máy đích (%s:%d) online để thực hiện đồng bộ...\n", config->target_ip, config->target_port);
+    // 1. Wait until peer is online to start pushing
+    printf("[Watcher] Waiting for peer (%s:%d) to come online for sync...\n", config->target_ip, config->target_port);
     while (1) {
         int test_sock = net_connect(config->target_ip, config->target_port);
         if (test_sock >= 0) {
             close(test_sock); // Đối tác đã online, đóng kết nối test
             break;
         }
-        sleep(2); // Nghỉ 2 giây rồi thử kết nối lại
+        sleep(2); // Sleep 2 seconds before retrying
     }
-    printf("[Watcher] Máy đích đã online! Bắt đầu đồng bộ các file có sẵn...\n");
+    printf("[Watcher] Peer is online! Starting initial sync of existing files...\n");
 
-    // 2. Quét đối chiếu sổ bộ (Reconciliation)
+    // 2. Reconciliation Scan
     DIR *dir = opendir(config->sync_dir);
     if (dir != NULL) {
         int index_count = 0;
@@ -198,9 +198,9 @@ void* watcher_thread_func(void* arg) {
         int visited_count = 0;
 
         struct dirent *ent;
-        printf("[Watcher] Đang quét các file có sẵn để đối chiếu sổ bộ...\n");
+        printf("[Watcher] Scanning existing files for index reconciliation...\n");
         while ((ent = readdir(dir)) != NULL) {
-            // Bỏ qua file ẩn, thư mục . và ..
+            // Skip hidden files, . and ..
             if (ent->d_name[0] == '.') continue;
             
             if (ent->d_type == DT_REG || ent->d_type == DT_DIR) {
@@ -213,14 +213,14 @@ void* watcher_thread_func(void* arg) {
                 snprintf(local_path, sizeof(local_path), "%s/%s", config->sync_dir, ent->d_name);
                 
                 if (index_get(ent->d_name, &old_size, old_hash) != 0) {
-                    printf("[Watcher] File mới tạo offline: %s. Đang tiến hành đẩy...\n", ent->d_name);
+                    printf("[Watcher] File created offline: %s. Dispatching...\n", ent->d_name);
                     dispatch_file(config, ent->d_name, EVENT_CREATE);
                 } else {
                     char new_hash[65] = {0};
                     if (ent->d_type == DT_REG) {
                         compute_sha256(local_path, new_hash);
                         if (strcmp(old_hash, new_hash) != 0) {
-                            printf("[Watcher] File sửa offline: %s. Đang tiến hành đẩy...\n", ent->d_name);
+                            printf("[Watcher] File modified offline: %s. Dispatching...\n", ent->d_name);
                             dispatch_file(config, ent->d_name, EVENT_MODIFY);
                         }
                     }
@@ -239,7 +239,7 @@ void* watcher_thread_func(void* arg) {
                 }
             }
             if (!found) {
-                printf("[Watcher] File xóa offline: %s. Đang yêu cầu máy đích xóa...\n", index_files[j]);
+                printf("[Watcher] File deleted offline: %s. Requesting peer deletion...\n", index_files[j]);
                 dispatch_file(config, index_files[j], EVENT_DELETE);
                 index_remove(index_files[j]);
             }
@@ -251,7 +251,7 @@ void* watcher_thread_func(void* arg) {
         if (visited_files) free(visited_files);
         
         index_save();
-        printf("[Watcher] Quét hoàn tất. Chuyển sang chế độ theo dõi thời gian thực (Inotify).\n");
+        printf("[Watcher] Initial scan complete. Switching to real-time tracking (Inotify).\n");
     } else {
         perror("opendir");
     }
@@ -292,17 +292,20 @@ void* watcher_thread_func(void* arg) {
                     continue;
                 }
 
-                // 2. Chặn tiếng vang cục bộ (Echo Loop)
+                // 2. Prevent Echo Loop
                 if (sm_get_state(event->name) == STATE_NETWORK) {
-                    printf("[Watcher] Bỏ qua %s do STATE_NETWORK (Chống Echo)\n", event->name);
-                    // Tuyệt đối không gọi sm_set_state(..., STATE_NONE) ở đây!
+                    printf("[Watcher] Ignoring %s due to STATE_NETWORK (Anti-Echo)\n", event->name);
+                    // Do NOT call sm_set_state(..., STATE_NONE) here!
                 } else {
-                    // Xử lý sự kiện hợp lệ (Local)
-                    if (event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_ATTRIB)) {
-                        printf("[Watcher] Phát hiện thay đổi cục bộ (Local): %s (Mask: 0x%x)\n", event->name, event->mask);
+                    // Valid local event
+                    if (event->mask & IN_CREATE) {
+                        printf("[Watcher] Detected local creation: %s (Mask: 0x%x)\n", event->name, event->mask);
+                        dispatch_file(config, event->name, EVENT_CREATE);
+                    } else if (event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO | IN_ATTRIB)) {
+                        printf("[Watcher] Detected local modification: %s (Mask: 0x%x)\n", event->name, event->mask);
                         dispatch_file(config, event->name, EVENT_MODIFY);
                     } else if (event->mask & IN_DELETE) {
-                        printf("[Watcher] Phát hiện xóa cục bộ (Local): %s\n", event->name);
+                        printf("[Watcher] Detected local deletion: %s\n", event->name);
                         dispatch_file(config, event->name, EVENT_DELETE);
                     }
                 }
