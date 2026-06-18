@@ -203,21 +203,36 @@ void* watcher_thread_func(void* arg) {
             // Skip hidden files, . and ..
             if (ent->d_name[0] == '.') continue;
             
-            if (ent->d_type == DT_REG || ent->d_type == DT_DIR) {
+            char local_path[2048];
+            snprintf(local_path, sizeof(local_path), "%s/%s", config->sync_dir, ent->d_name);
+            
+            struct stat st;
+            int is_reg = 0;
+            int is_dir = 0;
+            
+            if (ent->d_type == DT_UNKNOWN) {
+                if (stat(local_path, &st) == 0) {
+                    is_reg = S_ISREG(st.st_mode);
+                    is_dir = S_ISDIR(st.st_mode);
+                }
+            } else {
+                is_reg = (ent->d_type == DT_REG);
+                is_dir = (ent->d_type == DT_DIR);
+            }
+            
+            if (is_reg || is_dir) {
                 visited_files = realloc(visited_files, sizeof(char*) * (visited_count + 1));
                 visited_files[visited_count++] = strdup(ent->d_name);
 
                 uint64_t old_size = 0;
                 char old_hash[65] = {0};
-                char local_path[2048];
-                snprintf(local_path, sizeof(local_path), "%s/%s", config->sync_dir, ent->d_name);
                 
                 if (index_get(ent->d_name, &old_size, old_hash) != 0) {
                     printf("[Watcher] File created offline: %s. Dispatching...\n", ent->d_name);
                     dispatch_file(config, ent->d_name, EVENT_CREATE);
                 } else {
                     char new_hash[65] = {0};
-                    if (ent->d_type == DT_REG) {
+                    if (is_reg) {
                         compute_sha256(local_path, new_hash);
                         if (strcmp(old_hash, new_hash) != 0) {
                             printf("[Watcher] File modified offline: %s. Dispatching...\n", ent->d_name);
