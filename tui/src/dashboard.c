@@ -32,7 +32,7 @@ void draw_dashboard(AppState* state) {
     }
     
     mvwprintw(win_conn, 3, 2, "Target : %s:%d", state->peer_host[0] ? state->peer_host : "None", state->peer_port);
-    mvwprintw(4, 2, "Folder : %s", state->sync_folder[0] ? state->sync_folder : "None");
+    mvwprintw(win_conn, 4, 2, "Folder : %s", state->sync_folder[0] ? state->sync_folder : "None");
     
     // Tính Uptime
     if (state->start_time > 0) {
