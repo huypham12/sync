@@ -4,6 +4,7 @@
 void draw_monitor_screen(AppState* state) {
     int max_y, max_x;
     getmaxyx(stdscr, max_y, max_x);
+    (void)max_y;
     erase();
 
     attron(A_BOLD);
@@ -24,7 +25,7 @@ void draw_monitor_screen(AppState* state) {
         int bar_width = 40;
         mvwprintw(win, 6, 4, "Activity [");
         for (int i = 0; i < bar_width; i++) {
-            if (i < (state->files_synced % bar_width)) {
+            if ((uint64_t)i < (state->files_synced % bar_width)) {
                 waddch(win, '#');
             } else {
                 waddch(win, ' ');
