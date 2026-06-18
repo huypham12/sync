@@ -46,19 +46,19 @@ Chạy lệnh sau để mở Control Center:
 
 ### Bước 3: Thiết lập qua Giao diện
 1. Tại màn hình chính của TUI, nhấn phím **F2** để mở hộp thoại Cấu hình.
-2. Nhập các thông tin:
-   - **Sync Folder:** Đường dẫn thư mục cần đồng bộ (ví dụ: `/home/user/sync`).
-   - **Target IP:** Địa chỉ IP của máy đích (ví dụ: `192.168.1.100`).
-   - **Target Port:** Port kết nối (ví dụ: `8080`).
+2. Nhập các thông tin (Hệ thống sẽ tự động nhận diện tên máy và điền sẵn cấu hình chuẩn):
+   - **Sync Folder:** Đường dẫn thư mục cần đồng bộ (ví dụ: `/home/huy/sync_folder`).
+   - **Target IP:** Địa chỉ IP của máy đích (ví dụ: `192.168.241.134` hoặc `192.168.241.131`).
+   - **Target Port:** Port kết nối (mặc định: `8080`).
 3. Nhấn **ENTER** để lưu và truyền cấu hình xuống Daemon. Trạng thái sẽ chuyển sang **CONNECTED** và quá trình đồng bộ tự động bắt đầu.
 
 > **Các phím chức năng trên TUI:**
-> - `F1`: Dashboard (Hiển thị luồng công việc thời gian thực)
+> - `F1`: Dashboard (Hiển thị luồng công việc thời gian thực và tích hợp sẵn thanh Live Transfer Monitor)
 > - `F2`: Cấu hình hệ thống
 > - `F3`: Nhật ký Kiểm toán (Audit Log)
 > - `F4`: Nhật ký Hệ thống (Daemon Log)
 > - `F6`: Sổ bộ Trạng thái (Index Repository)
-> - `F7`: Giám sát Tiến trình truyền file (Live Transfer Monitor)
+> - `F7`: Giám sát Tiến trình truyền file (Mở rộng)
 > - `F10`: Thoát TUI (Lõi Daemon vẫn tiếp tục chạy ngầm)
 
 ## 4. Các tính năng cốt lõi (Core Features)

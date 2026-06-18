@@ -33,14 +33,20 @@ void draw_log_screen(const char* log_file, const char* title) {
     erase();
 
     // Tiêu đề
-    attron(A_BOLD);
-    mvprintw(0, 2, "SECURE FILE SYNC SERVICE v1.0 - %s", title);
-    attroff(A_BOLD);
+    attron(A_BOLD | COLOR_PAIR(5));
+    mvprintw(0, 0, " SECURE FILE SYNC SERVICE v1.0 - %s ", title);
+    for (int i = 38 + strlen(title); i < max_x; i++) mvaddch(0, i, ' ');
+    attroff(A_BOLD | COLOR_PAIR(5));
+    
+    attron(COLOR_PAIR(4));
     mvprintw(0, max_x - 45, "Up/Down: Scroll | F1: Dash | F10: Quit");
+    attroff(COLOR_PAIR(4));
 
     // Khung viền
-    WINDOW* win_log = newwin(max_y - 2, max_x, 1, 0);
+    WINDOW* win_log = newwin(max_y - 1, max_x, 1, 0);
+    wattron(win_log, COLOR_PAIR(1));
     box(win_log, 0, 0);
+    wattroff(win_log, COLOR_PAIR(1));
     
     // Đọc file
     FILE* f = fopen(log_file, "r");
@@ -95,11 +101,23 @@ void draw_log_screen(const char* log_file, const char* title) {
 
     // In ra cửa sổ
     for (int i = 0; i < view_height && (g_scroll_offset + i) < g_total_lines; i++) {
-        // Tránh in đè lề box
         char disp_buf[MAX_LINE_LEN];
         strncpy(disp_buf, lines[g_scroll_offset + i], max_x - 4);
         disp_buf[max_x - 4] = '\0';
+        
+        if (strstr(disp_buf, "[ERROR]") != NULL || strstr(disp_buf, "FAIL") != NULL) {
+            wattron(win_log, COLOR_PAIR(3) | A_BOLD);
+        } else if (strstr(disp_buf, "[WARN]") != NULL) {
+            wattron(win_log, COLOR_PAIR(4) | A_BOLD);
+        } else if (strstr(disp_buf, "[INFO]") != NULL || strstr(disp_buf, "SUCCESS") != NULL) {
+            wattron(win_log, COLOR_PAIR(2));
+        }
+        
         mvwprintw(win_log, 1 + i, 2, "%s", disp_buf);
+        
+        wattroff(win_log, COLOR_PAIR(2));
+        wattroff(win_log, COLOR_PAIR(3) | A_BOLD);
+        wattroff(win_log, COLOR_PAIR(4) | A_BOLD);
     }
 
     wrefresh(win_log);
