@@ -59,7 +59,7 @@ Chạy lệnh sau để mở Control Center:
 > - `F4`: Nhật ký Hệ thống (Daemon Log)
 > - `F6`: Sổ bộ Trạng thái (Index Repository)
 > - `F7`: Giám sát Tiến trình truyền file (Mở rộng)
-> - `F10`: Thoát TUI (Lõi Daemon vẫn tiếp tục chạy ngầm)
+> - `q` / `F12`: Thoát TUI (Lõi Daemon vẫn tiếp tục chạy ngầm)
 
 ## 4. Các tính năng cốt lõi (Core Features)
 

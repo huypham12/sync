@@ -39,7 +39,7 @@ void draw_log_screen(const char* log_file, const char* title) {
     attroff(A_BOLD | COLOR_PAIR(5));
     
     attron(COLOR_PAIR(4));
-    mvprintw(0, max_x - 45, "Up/Down: Scroll | F1: Dash | F10: Quit");
+    mvprintw(0, max_x - 45, "Up/Down: Scroll | F1: Dash | q/F12: Quit");
     attroff(COLOR_PAIR(4));
 
     // Khung viền

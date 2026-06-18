@@ -18,11 +18,11 @@ void draw_dashboard(AppState* state) {
     attroff(A_BOLD | COLOR_PAIR(5));
 
     attron(COLOR_PAIR(4));
-    mvprintw(0, max_x - 30, "Press F2: Config | F10: Quit");
+    mvprintw(0, max_x - 30, "Press F2: Config | q/F12: Quit");
     attroff(COLOR_PAIR(4));
 
     attron(COLOR_PAIR(6));
-    mvprintw(max_y - 1, 0, " F1:Dash | F2:Conf | F3:Audit | F4:D-Log | F6:Index | F7:Monitor | F10:Quit ");
+    mvprintw(max_y - 1, 0, " F1:Dash | F2:Conf | F3:Audit | F4:D-Log | F6:Index | F7:Monitor | q/F12:Quit ");
     for (int i = 78; i < max_x; i++) mvaddch(max_y - 1, i, ' ');
     attroff(COLOR_PAIR(6));
 
@@ -133,7 +133,7 @@ void draw_dashboard(AppState* state) {
     mvwprintw(win_hotkeys, 5, 3, "F4 : Nhật ký Hệ thống (Daemon Log)");
     mvwprintw(win_hotkeys, 6, 3, "F6 : Sổ bộ Trạng thái (Index Repository)");
     mvwprintw(win_hotkeys, 7, 3, "F7 : Giám sát Tiến trình truyền file (Mở rộng)");
-    mvwprintw(win_hotkeys, 8, 3, "F10: Thoát TUI (Lõi Daemon vẫn tiếp tục chạy ngầm)");
+    mvwprintw(win_hotkeys, 8, 3, "q/F12: Thoát TUI (Lõi Daemon vẫn tiếp tục chạy ngầm)");
     wattroff(win_hotkeys, COLOR_PAIR(4));
     
     wrefresh(win_hotkeys);

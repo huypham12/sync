@@ -32,7 +32,7 @@ int main() {
     while (keep_running) {
         // Đọc phím
         int ch = getch();
-        if (ch == KEY_F(10)) {
+        if (ch == KEY_F(10) || ch == KEY_F(12) || (g_current_screen != SCREEN_CONFIG && (ch == 'q' || ch == 'Q'))) {
             if (g_current_screen == SCREEN_CONFIG) destroy_config_form();
             keep_running = 0;
             break;
@@ -72,7 +72,7 @@ int main() {
         // 3. Xóa và vẽ màn hình cơ bản
         if (!daemon_alive) {
             erase();
-            mvprintw(1, 2, "SECURE SYNC CONTROL CENTER - F10 to Quit");
+            mvprintw(1, 2, "SECURE SYNC CONTROL CENTER - q / F12 to Quit");
             mvprintw(3, 2, "[!] Cannot connect to Daemon (Is syncd running?)");
             mvprintw(4, 2, "    Make sure you start ./build/syncd first.");
             refresh();

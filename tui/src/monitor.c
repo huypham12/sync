@@ -10,7 +10,7 @@ void draw_monitor_screen(AppState* state) {
     attron(A_BOLD);
     mvprintw(0, 2, "SECURE SYNC - LIVE TRANSFER MONITOR (F7)");
     attroff(A_BOLD);
-    mvprintw(0, max_x - 30, "F1: Dashboard | F10: Quit");
+    mvprintw(0, max_x - 30, "F1: Dashboard | q/F12: Quit");
 
     WINDOW* win = newwin(10, max_x - 4, 3, 2);
     box(win, 0, 0);
