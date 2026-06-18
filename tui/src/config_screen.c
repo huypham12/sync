@@ -8,8 +8,8 @@
 
 static FIELD *field[4];
 static FORM  *my_form;
-static WINDOW *form_win;
-static WINDOW *form_sub;
+static WINDOW *cfg_form_win;
+static WINDOW *cfg_form_sub;
 static int config_active = 0;
 
 static char* trim_whitespaces(char *str) {
@@ -46,22 +46,22 @@ void init_config_form(AppState* state) {
     int max_y, max_x;
     getmaxyx(stdscr, max_y, max_x);
 
-    form_win = newwin(15, 60, (max_y - 15)/2, (max_x - 60)/2);
-    keypad(form_win, TRUE);
+    cfg_form_win = newwin(15, 60, (max_y - 15)/2, (max_x - 60)/2);
+    keypad(cfg_form_win, TRUE);
 
-    set_form_win(my_form, form_win);
-    form_sub = derwin(form_win, 11, 58, 2, 1);
-    set_form_sub(my_form, form_sub);
+    set_form_win(my_form, cfg_form_win);
+    cfg_form_sub = derwin(cfg_form_win, 11, 58, 2, 1);
+    set_form_sub(my_form, cfg_form_sub);
 
-    box(form_win, 0, 0);
-    mvwprintw(form_win, 0, 2, " DAEMON CONFIGURATION ");
-    mvwprintw(form_sub, 2, 2, "Sync Folder:");
-    mvwprintw(form_sub, 4, 2, "Target IP  :");
-    mvwprintw(form_sub, 6, 2, "Target Port:");
-    mvwprintw(form_win, 13, 2, " [ENTER] Save & Start | [ESC] Cancel ");
+    box(cfg_form_win, 0, 0);
+    mvwprintw(cfg_form_win, 0, 2, " DAEMON CONFIGURATION ");
+    mvwprintw(cfg_form_sub, 2, 2, "Sync Folder:");
+    mvwprintw(cfg_form_sub, 4, 2, "Target IP  :");
+    mvwprintw(cfg_form_sub, 6, 2, "Target Port:");
+    mvwprintw(cfg_form_win, 13, 2, " [ENTER] Save & Start | [ESC] Cancel ");
 
     post_form(my_form);
-    wrefresh(form_win);
+    wrefresh(cfg_form_win);
     config_active = 1;
 }
 
@@ -71,8 +71,8 @@ void destroy_config_form() {
     free_field(field[0]);
     free_field(field[1]);
     free_field(field[2]);
-    delwin(form_sub);
-    delwin(form_win);
+    delwin(cfg_form_sub);
+    delwin(cfg_form_win);
     config_active = 0;
 }
 
@@ -84,7 +84,7 @@ void draw_config_screen(AppState* state) {
         init_config_form(state);
     } else {
         // Redraw around the form if needed, but form is mostly static until input
-        wrefresh(form_win);
+        wrefresh(cfg_form_win);
     }
 }
 
