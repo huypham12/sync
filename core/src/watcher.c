@@ -89,6 +89,9 @@ static void remove_watch_from_list(int wd) {
     }
 }
 
+// Forward declaration
+static void dispatch_file(WatcherConfig *config, const char *filename, SyncEventType type);
+
 static void reconcile_scan_recursive(WatcherConfig* config, const char* sync_dir, const char* base_path, char*** visited_files, int* visited_count) {
     char full_path[2048];
     if (strlen(base_path) > 0) {
@@ -292,7 +295,7 @@ static void dispatch_file(WatcherConfig *config, const char *filename,
 void *watcher_thread_func(void *arg) {
   WatcherConfig *config = (WatcherConfig *)arg;
   int length, i = 0;
-  int fd, wd;
+  int fd;
   char buffer[BUF_LEN];
 
   // Khởi tạo inotify (Sử dụng IN_NONBLOCK để tránh treo read)
