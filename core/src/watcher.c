@@ -409,6 +409,12 @@ void *watcher_thread_func(void *arg) {
       continue;
     }
 
+    struct {
+        char filename[2048];
+        uint32_t combined_mask;
+    } batch[512];
+    int batch_count = 0;
+
     while (i < length) {
       struct inotify_event *event = (struct inotify_event *)&buffer[i];
       
@@ -432,31 +438,49 @@ void *watcher_thread_func(void *arg) {
             relative_filename[sizeof(relative_filename) - 1] = '\0';
         }
 
-        // 2. Prevent Echo Loop
-        if (sm_get_state(relative_filename) == STATE_NETWORK) {
-          printf("[Watcher] Ignoring %s due to STATE_NETWORK (Anti-Echo)\n",
-                 relative_filename);
-          // Do NOT call sm_set_state(..., STATE_NONE) here!
-        } else {
-          // Valid local event
-          if (event->mask & IN_CREATE) {
-            printf("[Watcher] Detected local creation: %s (Mask: 0x%x)\n",
-                   relative_filename, event->mask);
-            dispatch_file(config, relative_filename, EVENT_CREATE);
-            if (event->mask & IN_ISDIR) {
-                add_watch_recursive(fd, config->sync_dir, relative_filename);
+        // Gộp các sự kiện của cùng 1 file lại
+        int found = 0;
+        for (int b = 0; b < batch_count; b++) {
+            if (strcmp(batch[b].filename, relative_filename) == 0) {
+                batch[b].combined_mask |= event->mask;
+                found = 1;
+                break;
             }
-          } else if (event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO | IN_ATTRIB)) {
-            printf("[Watcher] Detected local modification: %s (Mask: 0x%x)\n",
-                   relative_filename, event->mask);
-            dispatch_file(config, relative_filename, EVENT_MODIFY);
-          } else if (event->mask & IN_DELETE) {
-            printf("[Watcher] Detected local deletion: %s\n", relative_filename);
-            dispatch_file(config, relative_filename, EVENT_DELETE);
-          }
+        }
+        if (!found && batch_count < 512) {
+            strncpy(batch[batch_count].filename, relative_filename, sizeof(batch[batch_count].filename) - 1);
+            batch[batch_count].combined_mask = event->mask;
+            batch_count++;
         }
       }
       i += EVENT_SIZE + event->len;
+    }
+
+    // Xử lý một lần duy nhất cho mỗi file trong batch
+    for (int b = 0; b < batch_count; b++) {
+        char* fname = batch[b].filename;
+        uint32_t mask = batch[b].combined_mask;
+
+        // 2. Prevent Echo Loop
+        if (sm_get_state(fname) == STATE_NETWORK) {
+          printf("[Watcher] Ignoring %s due to STATE_NETWORK (Anti-Echo)\n", fname);
+          continue;
+        }
+
+        // Valid local event
+        if (mask & IN_DELETE) {
+          printf("[Watcher] Detected local deletion: %s\n", fname);
+          dispatch_file(config, fname, EVENT_DELETE);
+        } else if (mask & IN_CREATE) {
+          printf("[Watcher] Detected local creation: %s (Mask: 0x%x)\n", fname, mask);
+          if (mask & IN_ISDIR) {
+              add_watch_recursive(fd, config->sync_dir, fname);
+          }
+          dispatch_file(config, fname, EVENT_CREATE);
+        } else if (mask & (IN_CLOSE_WRITE | IN_MOVED_TO | IN_ATTRIB)) {
+          printf("[Watcher] Detected local modification: %s (Mask: 0x%x)\n", fname, mask);
+          dispatch_file(config, fname, EVENT_MODIFY);
+        }
     }
   }
 
