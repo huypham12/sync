@@ -181,7 +181,7 @@ static void dispatch_file(WatcherConfig *config, const char *filename,
       if (flat_name[i] == '/') flat_name[i] = '_';
   }
 
-  char encrypted_path[2048];
+  char encrypted_path[4096];
   snprintf(encrypted_path, sizeof(encrypted_path), "/tmp/syncd/%s.enc",
            flat_name);
 

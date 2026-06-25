@@ -57,7 +57,7 @@ static void handle_client(int client_sock, ReceiverConfig* config, const char* p
                 if (flat_name[i] == '/') flat_name[i] = '_';
             }
 
-            char encrypted_path[2048];
+            char encrypted_path[4096];
             snprintf(encrypted_path, sizeof(encrypted_path), "/tmp/syncd/%s.enc.recv", flat_name);
             
             // Tạo thư mục tạm an toàn
