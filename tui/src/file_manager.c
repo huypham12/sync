@@ -46,7 +46,7 @@ static void build_tree(const char* base_path, int depth, uint32_t current_flags)
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
         if (local_count >= 256) break;
         
-        char full_path[MAX_PATH_LEN];
+        char full_path[1024];
         snprintf(full_path, sizeof(full_path), "%s/%s", base_path, entry->d_name);
         
         struct stat st;
@@ -229,7 +229,7 @@ void handle_file_manager_input(int ch, AppState* state) {
                 strncpy(target_dir, state->sync_folder, MAX_PATH_LEN-1);
             }
             
-            char fullpath[MAX_PATH_LEN];
+            char fullpath[1024];
             snprintf(fullpath, sizeof(fullpath), "%s/%s", target_dir, filename);
             FILE* f = fopen(fullpath, "w");
             if (f) fclose(f);
@@ -253,7 +253,7 @@ void handle_file_manager_input(int ch, AppState* state) {
                 strncpy(target_dir, state->sync_folder, MAX_PATH_LEN-1);
             }
             
-            char fullpath[MAX_PATH_LEN];
+            char fullpath[1024];
             snprintf(fullpath, sizeof(fullpath), "%s/%s", target_dir, dirname);
             mkdir(fullpath, 0755);
             last_load_time = 0;
