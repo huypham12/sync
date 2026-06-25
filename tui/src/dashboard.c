@@ -108,13 +108,19 @@ void draw_dashboard(AppState* state) {
     box(win_events, 0, 0);
     mvwprintw(win_events, 0, 2, "[ Recent Events ]");
     wattroff(win_events, COLOR_PAIR(1));
-    
-    // In các sự kiện (Vòng lặp từ cũ đến mới trong circular buffer)
+    // In các sự kiện (Mới nhất ở trên cùng)
+    int win_h = max_y - 13;
+    int max_display = win_h - 3; // Chừa viền trên, dòng trống, và viền dưới
+    if (max_display < 0) max_display = 0;
+
     int count = (state->total_events < MAX_EVENTS) ? state->total_events : MAX_EVENTS;
-    int start_idx = (state->total_events < MAX_EVENTS) ? 0 : state->event_head;
+    if (count > max_display) count = max_display; // Tránh ghi đè lên viền dưới
+    
+    // newest_idx trỏ tới sự kiện mới nhất vừa được thêm
+    int newest_idx = (state->total_events == 0) ? 0 : (state->event_head - 1 + MAX_EVENTS) % MAX_EVENTS;
     
     for (int i = 0; i < count; i++) {
-        int idx = (start_idx + i) % MAX_EVENTS;
+        int idx = (newest_idx - i + MAX_EVENTS) % MAX_EVENTS;
         mvwprintw(win_events, 2 + i, 2, "> %s", state->recent_events[idx]);
     }
     wnoutrefresh(win_events);
