@@ -175,9 +175,15 @@ static void dispatch_file(WatcherConfig *config, const char *filename,
     header.is_dir = 0;
   }
 
+  char flat_name[2048];
+  strncpy(flat_name, filename, sizeof(flat_name));
+  for (int i = 0; flat_name[i] != '\0'; i++) {
+      if (flat_name[i] == '/') flat_name[i] = '_';
+  }
+
   char encrypted_path[2048];
   snprintf(encrypted_path, sizeof(encrypted_path), "/tmp/syncd/%s.enc",
-           filename);
+           flat_name);
 
   if ((type == EVENT_MODIFY || type == EVENT_CREATE) && header.is_dir == 0) {
     // Tạo thư mục tạm nếu chưa có

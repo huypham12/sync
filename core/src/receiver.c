@@ -24,8 +24,8 @@ static void handle_client(int client_sock, ReceiverConfig* config, const char* p
         return;
     }
 
-    // Bảo vệ chống Path Traversal
-    if (strstr(header.file_name, "..") != NULL || strchr(header.file_name, '/') != NULL) {
+    // Bảo vệ chống Path Traversal (chỉ chặn '..' để cho phép thư mục con '/')
+    if (strstr(header.file_name, "..") != NULL) {
         fprintf(stderr, "[Receiver] Invalid filename (Path Traversal detected): %s\n", header.file_name);
         close(client_sock);
         return;
@@ -51,8 +51,14 @@ static void handle_client(int client_sock, ReceiverConfig* config, const char* p
                 chmod(target_path, header.mode);
             }
         } else {
+            char flat_name[2048];
+            strncpy(flat_name, header.file_name, sizeof(flat_name));
+            for (int i = 0; flat_name[i] != '\0'; i++) {
+                if (flat_name[i] == '/') flat_name[i] = '_';
+            }
+
             char encrypted_path[2048];
-            snprintf(encrypted_path, sizeof(encrypted_path), "/tmp/syncd/%s.enc.recv", header.file_name);
+            snprintf(encrypted_path, sizeof(encrypted_path), "/tmp/syncd/%s.enc.recv", flat_name);
             
             // Tạo thư mục tạm an toàn
             mkdir("/tmp/syncd", 0777);
