@@ -187,7 +187,9 @@ static void prompt_input(const char* prompt, char* buffer, int max_len) {
     
     echo();
     curs_set(1);
+    timeout(-1); // Disable timeout to wait for user input
     getnstr(buffer, max_len);
+    timeout(200); // Restore 200ms timeout for main loop
     noecho();
     curs_set(0);
 }
