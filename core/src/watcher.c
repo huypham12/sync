@@ -55,7 +55,7 @@ static void add_watch_recursive(int fd, const char* sync_dir, const char* base_p
             continue;
         }
 
-        char child_full[2048];
+        char child_full[4096];
         snprintf(child_full, sizeof(child_full), "%s/%s", full_path, ent->d_name);
 
         struct stat st;
