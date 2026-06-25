@@ -19,6 +19,140 @@
 #define EVENT_SIZE (sizeof(struct inotify_event))
 #define BUF_LEN (1024 * (EVENT_SIZE + 16))
 
+#define MAX_WATCHERS 8192
+
+typedef struct {
+    int wd;
+    char rel_path[1024];
+} WatchItem;
+
+static WatchItem watchers[MAX_WATCHERS];
+static int watcher_count = 0;
+
+static void add_watch_recursive(int fd, const char* sync_dir, const char* base_path) {
+    char full_path[2048];
+    if (strlen(base_path) > 0) {
+        snprintf(full_path, sizeof(full_path), "%s/%s", sync_dir, base_path);
+    } else {
+        strncpy(full_path, sync_dir, sizeof(full_path) - 1);
+    }
+
+    int wd = inotify_add_watch(fd, full_path,
+                               IN_CLOSE_WRITE | IN_DELETE | IN_MOVED_TO | IN_CREATE | IN_ATTRIB);
+    if (wd >= 0 && watcher_count < MAX_WATCHERS) {
+        watchers[watcher_count].wd = wd;
+        strncpy(watchers[watcher_count].rel_path, base_path, 1023);
+        watchers[watcher_count].rel_path[1023] = '\0';
+        watcher_count++;
+    }
+
+    DIR* dir = opendir(full_path);
+    if (!dir) return;
+
+    struct dirent* ent;
+    while ((ent = readdir(dir)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0 || ent->d_name[0] == '.') {
+            continue;
+        }
+
+        char child_full[2048];
+        snprintf(child_full, sizeof(child_full), "%s/%s", full_path, ent->d_name);
+
+        struct stat st;
+        if (stat(child_full, &st) == 0 && S_ISDIR(st.st_mode)) {
+            char child_rel[1024];
+            if (strlen(base_path) > 0) {
+                snprintf(child_rel, sizeof(child_rel), "%s/%s", base_path, ent->d_name);
+            } else {
+                strncpy(child_rel, ent->d_name, sizeof(child_rel) - 1);
+            }
+            add_watch_recursive(fd, sync_dir, child_rel);
+        }
+    }
+    closedir(dir);
+}
+
+static const char* get_rel_path_for_wd(int wd) {
+    for (int i = 0; i < watcher_count; i++) {
+        if (watchers[i].wd == wd) return watchers[i].rel_path;
+    }
+    return "";
+}
+
+static void remove_watch_from_list(int wd) {
+    for (int i = 0; i < watcher_count; i++) {
+        if (watchers[i].wd == wd) {
+            watchers[i] = watchers[watcher_count - 1];
+            watcher_count--;
+            break;
+        }
+    }
+}
+
+static void reconcile_scan_recursive(WatcherConfig* config, const char* sync_dir, const char* base_path, char*** visited_files, int* visited_count) {
+    char full_path[2048];
+    if (strlen(base_path) > 0) {
+        snprintf(full_path, sizeof(full_path), "%s/%s", sync_dir, base_path);
+    } else {
+        strncpy(full_path, sync_dir, sizeof(full_path) - 1);
+    }
+
+    DIR* dir = opendir(full_path);
+    if (!dir) return;
+
+    struct dirent* ent;
+    while ((ent = readdir(dir)) != NULL) {
+        if (ent->d_name[0] == '.') continue; // Bỏ qua . .. và file ẩn
+
+        char child_rel[1024];
+        if (strlen(base_path) > 0) {
+            snprintf(child_rel, sizeof(child_rel), "%s/%s", base_path, ent->d_name);
+        } else {
+            strncpy(child_rel, ent->d_name, sizeof(child_rel) - 1);
+        }
+
+        char local_path[2048];
+        snprintf(local_path, sizeof(local_path), "%s/%s", sync_dir, child_rel);
+
+        struct stat st;
+        int is_reg = 0;
+        int is_dir = 0;
+        if (stat(local_path, &st) == 0) {
+            is_reg = S_ISREG(st.st_mode);
+            is_dir = S_ISDIR(st.st_mode);
+        }
+
+        if (is_reg || is_dir) {
+            *visited_files = realloc(*visited_files, sizeof(char*) * (*visited_count + 1));
+            (*visited_files)[*visited_count] = strdup(child_rel);
+            (*visited_count)++;
+
+            uint64_t old_size = 0;
+            char old_hash[65] = {0};
+
+            // Hàm index_get kiểm tra xem file đã có trong sổ chưa
+            if (index_get(child_rel, &old_size, old_hash) != 0) {
+                printf("[Watcher] File/Dir created offline: %s. Dispatching...\n", child_rel);
+                dispatch_file(config, child_rel, EVENT_CREATE);
+            } else {
+                char new_hash[65] = {0};
+                if (is_reg) {
+                    compute_sha256(local_path, new_hash);
+                    if (strcmp(old_hash, new_hash) != 0) {
+                        printf("[Watcher] File modified offline: %s. Dispatching...\n", child_rel);
+                        dispatch_file(config, child_rel, EVENT_MODIFY);
+                    }
+                }
+            }
+
+            if (is_dir) {
+                reconcile_scan_recursive(config, sync_dir, child_rel, visited_files, visited_count);
+            }
+        }
+    }
+    closedir(dir);
+}
+
 static void dispatch_file(WatcherConfig *config, const char *filename,
                           SyncEventType type) {
   char local_path[2048];
@@ -173,10 +307,9 @@ void *watcher_thread_func(void *arg) {
   }
   global_inotify_fd = fd;
 
-  wd = inotify_add_watch(fd, config->sync_dir,
-                         IN_CLOSE_WRITE | IN_DELETE | IN_MOVED_TO | IN_CREATE |
-                             IN_ATTRIB);
-  if (wd == -1) {
+  watcher_count = 0;
+  add_watch_recursive(fd, config->sync_dir, "");
+  if (watcher_count == 0) {
     fprintf(stderr, "Cannot watch '%s'\n", config->sync_dir);
     return NULL;
   }
@@ -202,97 +335,41 @@ void *watcher_thread_func(void *arg) {
       "[Watcher] Peer is online! Starting initial sync of existing files...\n");
 
   // 2. Reconciliation Scan
-  DIR *dir = opendir(config->sync_dir);
-  if (dir != NULL) {
-    int index_count = 0;
-    char **index_files = index_get_all_filenames(&index_count);
-    char **visited_files = NULL;
-    int visited_count = 0;
+  int index_count = 0;
+  char **index_files = index_get_all_filenames(&index_count);
+  char **visited_files = NULL;
+  int visited_count = 0;
 
-    struct dirent *ent;
-    printf("[Watcher] Scanning existing files for index reconciliation...\n");
-    while ((ent = readdir(dir)) != NULL) {
-      // Skip hidden files, . and ..
-      if (ent->d_name[0] == '.')
-        continue;
+  printf("[Watcher] Scanning existing files for index reconciliation...\n");
+  reconcile_scan_recursive(config, config->sync_dir, "", &visited_files, &visited_count);
 
-      char local_path[2048];
-      snprintf(local_path, sizeof(local_path), "%s/%s", config->sync_dir,
-               ent->d_name);
-
-      struct stat st;
-      int is_reg = 0;
-      int is_dir = 0;
-
-      if (ent->d_type == DT_UNKNOWN) {
-        if (stat(local_path, &st) == 0) {
-          is_reg = S_ISREG(st.st_mode);
-          is_dir = S_ISDIR(st.st_mode);
-        }
-      } else {
-        is_reg = (ent->d_type == DT_REG);
-        is_dir = (ent->d_type == DT_DIR);
-      }
-
-      if (is_reg || is_dir) {
-        visited_files =
-            realloc(visited_files, sizeof(char *) * (visited_count + 1));
-        visited_files[visited_count++] = strdup(ent->d_name);
-
-        uint64_t old_size = 0;
-        char old_hash[65] = {0};
-
-        if (index_get(ent->d_name, &old_size, old_hash) != 0) {
-          printf("[Watcher] File created offline: %s. Dispatching...\n",
-                 ent->d_name);
-          dispatch_file(config, ent->d_name, EVENT_CREATE);
-        } else {
-          char new_hash[65] = {0};
-          if (is_reg) {
-            compute_sha256(local_path, new_hash);
-            if (strcmp(old_hash, new_hash) != 0) {
-              printf("[Watcher] File modified offline: %s. Dispatching...\n",
-                     ent->d_name);
-              dispatch_file(config, ent->d_name, EVENT_MODIFY);
-            }
-          }
-        }
+  // 3. Tìm các file bị xóa offline (có trong sổ bộ nhưng không có trên ổ cứng)
+  for (int j = 0; j < index_count; j++) {
+    int found = 0;
+    for (int k = 0; k < visited_count; k++) {
+      if (strcmp(index_files[j], visited_files[k]) == 0) {
+        found = 1;
+        break;
       }
     }
-    closedir(dir);
-
-    // 3. Tìm các file bị xóa offline (có trong sổ bộ nhưng không có trên ổ
-    // cứng)
-    for (int j = 0; j < index_count; j++) {
-      int found = 0;
-      for (int k = 0; k < visited_count; k++) {
-        if (strcmp(index_files[j], visited_files[k]) == 0) {
-          found = 1;
-          break;
-        }
-      }
-      if (!found) {
-        printf(
-            "[Watcher] File deleted offline: %s. Requesting peer deletion...\n",
-            index_files[j]);
-        dispatch_file(config, index_files[j], EVENT_DELETE);
-        index_remove(index_files[j]);
-      }
-      free(index_files[j]);
+    if (!found) {
+      printf(
+          "[Watcher] File deleted offline: %s. Requesting peer deletion...\n",
+          index_files[j]);
+      dispatch_file(config, index_files[j], EVENT_DELETE);
+      index_remove(index_files[j]);
     }
-    free(index_files);
-
-    for (int k = 0; k < visited_count; k++)
-      free(visited_files[k]);
-    if (visited_files)
-      free(visited_files);
-
-    index_save();
-    printf("[Watcher] Initial scan complete. Switching to real-time tracking "
-           "(Inotify).\n");
-  } else {
-    perror("opendir");
+    free(index_files[j]);
   }
+  free(index_files);
+
+  for (int k = 0; k < visited_count; k++)
+    free(visited_files[k]);
+  if (visited_files)
+    free(visited_files);
+
+  index_save();
+  printf("[Watcher] Initial scan complete. Switching to real-time tracking (Inotify).\n");
   // -------------------------------------------------
 
   while (keep_running) {
@@ -325,31 +402,48 @@ void *watcher_thread_func(void *arg) {
 
     while (i < length) {
       struct inotify_event *event = (struct inotify_event *)&buffer[i];
+      
+      if (event->mask & IN_IGNORED) {
+          remove_watch_from_list(event->wd);
+      }
+
       if (event->len) {
         // Bỏ qua file ẩn
         if (event->name[0] == '.') {
           i += EVENT_SIZE + event->len;
           continue;
         }
+        
+        const char* rel_dir = get_rel_path_for_wd(event->wd);
+        char relative_filename[2048];
+        if (strlen(rel_dir) > 0) {
+            snprintf(relative_filename, sizeof(relative_filename), "%s/%s", rel_dir, event->name);
+        } else {
+            strncpy(relative_filename, event->name, sizeof(relative_filename) - 1);
+            relative_filename[sizeof(relative_filename) - 1] = '\0';
+        }
 
         // 2. Prevent Echo Loop
-        if (sm_get_state(event->name) == STATE_NETWORK) {
+        if (sm_get_state(relative_filename) == STATE_NETWORK) {
           printf("[Watcher] Ignoring %s due to STATE_NETWORK (Anti-Echo)\n",
-                 event->name);
+                 relative_filename);
           // Do NOT call sm_set_state(..., STATE_NONE) here!
         } else {
           // Valid local event
           if (event->mask & IN_CREATE) {
             printf("[Watcher] Detected local creation: %s (Mask: 0x%x)\n",
-                   event->name, event->mask);
-            dispatch_file(config, event->name, EVENT_CREATE);
+                   relative_filename, event->mask);
+            dispatch_file(config, relative_filename, EVENT_CREATE);
+            if (event->mask & IN_ISDIR) {
+                add_watch_recursive(fd, config->sync_dir, relative_filename);
+            }
           } else if (event->mask & (IN_CLOSE_WRITE | IN_MOVED_TO | IN_ATTRIB)) {
             printf("[Watcher] Detected local modification: %s (Mask: 0x%x)\n",
-                   event->name, event->mask);
-            dispatch_file(config, event->name, EVENT_MODIFY);
+                   relative_filename, event->mask);
+            dispatch_file(config, relative_filename, EVENT_MODIFY);
           } else if (event->mask & IN_DELETE) {
-            printf("[Watcher] Detected local deletion: %s\n", event->name);
-            dispatch_file(config, event->name, EVENT_DELETE);
+            printf("[Watcher] Detected local deletion: %s\n", relative_filename);
+            dispatch_file(config, relative_filename, EVENT_DELETE);
           }
         }
       }
@@ -357,7 +451,10 @@ void *watcher_thread_func(void *arg) {
     }
   }
 
-  inotify_rm_watch(fd, wd);
+  // Đóng toàn bộ các inotify_rm_watch
+  for(int j = 0; j < watcher_count; j++) {
+      inotify_rm_watch(fd, watchers[j].wd);
+  }
   close(fd);
   return NULL;
 }
