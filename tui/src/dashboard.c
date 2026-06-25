@@ -22,8 +22,8 @@ void draw_dashboard(AppState* state) {
     attroff(COLOR_PAIR(4));
 
     attron(COLOR_PAIR(6));
-    mvprintw(max_y - 1, 0, " F1:Dash | F2:Conf | F3:Audit | F4:D-Log | F6:Index | F7:Monitor | q/F12:Quit ");
-    for (int i = 78; i < max_x; i++) mvaddch(max_y - 1, i, ' ');
+    mvprintw(max_y - 1, 0, " F1:Dash | F2:Conf | F3:Audit | F4:D-Log | F5:Files | F6:Index | F7:Monitor | q/F12:Quit ");
+    for (int i = 89; i < max_x; i++) mvaddch(max_y - 1, i, ' ');
     attroff(COLOR_PAIR(6));
 
     // Queue stdscr update
@@ -103,7 +103,7 @@ void draw_dashboard(AppState* state) {
     wnoutrefresh(win_metrics);
 
     // Vẽ box Recent Events (Phải trên)
-    WINDOW* win_events = newwin(max_y - 11, right_width, 1, left_width);
+    WINDOW* win_events = newwin(max_y - 13, right_width, 1, left_width);
     wattron(win_events, COLOR_PAIR(1));
     box(win_events, 0, 0);
     mvwprintw(win_events, 0, 2, "[ Recent Events ]");
@@ -120,7 +120,7 @@ void draw_dashboard(AppState* state) {
     wnoutrefresh(win_events);
 
     // Vẽ box Hotkeys (Phải dưới)
-    WINDOW* win_hotkeys = newwin(10, right_width, max_y - 10, left_width);
+    WINDOW* win_hotkeys = newwin(11, right_width, max_y - 12, left_width);
     wattron(win_hotkeys, COLOR_PAIR(1));
     box(win_hotkeys, 0, 0);
     mvwprintw(win_hotkeys, 0, 2, "[ Keyboard Shortcuts ]");
@@ -131,9 +131,10 @@ void draw_dashboard(AppState* state) {
     mvwprintw(win_hotkeys, 3, 3, "F2 : System Configuration");
     mvwprintw(win_hotkeys, 4, 3, "F3 : Audit Log");
     mvwprintw(win_hotkeys, 5, 3, "F4 : Daemon Log");
-    mvwprintw(win_hotkeys, 6, 3, "F6 : Index Repository State");
-    mvwprintw(win_hotkeys, 7, 3, "F7 : Live Transfer Monitor (Extended)");
-    mvwprintw(win_hotkeys, 8, 3, "q/F12: Quit TUI (Daemon keeps running)");
+    mvwprintw(win_hotkeys, 6, 3, "F5 : File Manager (CRUD)");
+    mvwprintw(win_hotkeys, 7, 3, "F6 : Index Repository State");
+    mvwprintw(win_hotkeys, 8, 3, "F7 : Live Transfer Monitor (Extended)");
+    mvwprintw(win_hotkeys, 9, 3, "q/F12: Quit TUI (Daemon keeps running)");
     wattroff(win_hotkeys, COLOR_PAIR(4));
     
     wnoutrefresh(win_hotkeys);

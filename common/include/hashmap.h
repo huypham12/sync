@@ -4,9 +4,9 @@
 #include <stdbool.h>
 
 typedef enum {
-    STATE_NONE = 0,
-    STATE_LOCAL,
-    STATE_NETWORK
+  STATE_NONE = 0, // file chưa có trạng thái
+  STATE_LOCAL,    // file local
+  STATE_NETWORK   // file lấy từ network
 } FileState;
 
 // Khởi tạo hashmap
@@ -25,3 +25,4 @@ void hashmap_remove(const char *filename);
 void hashmap_destroy(void);
 
 #endif // HASHMAP_H
+// chỉ chạy một lần, đã tồn tại thì bỏ qua

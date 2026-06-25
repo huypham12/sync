@@ -21,7 +21,8 @@ int net_listen(int port) {
   }
 
   // Thiết lập tùy chọn socket (SO_REUSEADDR) để có thể khởi động lại server
-  // ngay lập tức
+  // ngay lập tức kiểu có thể khi server tắt thì cái port vẫn bị cái tcp cũ
+  // chiếm, nên nếu bật lại luôn thì cần cho phép blind lại cái port đó
   if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
     perror("setsockopt SO_REUSEADDR failed");
     close(server_fd);
@@ -60,7 +61,7 @@ int net_connect(const char *host, int port) {
   }
 
   // Phân giải tên miền (ví dụ: node-a, node-b, hoặc IP)
-  server = gethostbyname(host);
+  server = gethostbyname(host); // cái này đã cấu hình sẵn trong /etc/hosts
   if (server == NULL) {
     fprintf(stderr, "ERROR, no such host: %s\n", host);
     close(sock);

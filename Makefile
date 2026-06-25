@@ -24,6 +24,7 @@ TUI_OBJS = $(BUILD_DIR)/ipc_client.o \
            $(BUILD_DIR)/dashboard.o \
            $(BUILD_DIR)/log_screen.o \
            $(BUILD_DIR)/config_screen.o \
+           $(BUILD_DIR)/file_manager.o \
            $(BUILD_DIR)/monitor.o \
            $(BUILD_DIR)/network.o \
            $(BUILD_DIR)/tui_main.o
@@ -36,7 +37,7 @@ all: $(BUILD_DIR) $(TARGET) $(TARGET_TUI)
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-# Link Core
+# Link Core ^ là toàn bộ cái trong core_objs, @ là target ở đây là $(BUILD_DIR)/syncd
 $(TARGET): $(CORE_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 	@echo "Build successful! Target is $(TARGET)"
@@ -46,7 +47,7 @@ $(TARGET_TUI): $(TUI_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lform -lncurses
 	@echo "Build successful! TUI is $(TARGET_TUI)"
 
-# Rules for common module
+# Rules for common module: input là .c output là .o
 $(BUILD_DIR)/%.o: $(COMMON_SRC)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -68,6 +69,9 @@ $(BUILD_DIR)/config_screen.o: $(TUI_SRC)/config_screen.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/monitor.o: $(TUI_SRC)/monitor.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/file_manager.o: $(TUI_SRC)/file_manager.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/tui_main.o: $(TUI_SRC)/main.c

@@ -49,6 +49,9 @@ int main() {
             if (g_current_screen == SCREEN_CONFIG) destroy_config_form();
             g_current_screen = SCREEN_LOG_DAEMON;
             reset_log_scroll();
+        } else if (ch == KEY_F(5)) {
+            if (g_current_screen == SCREEN_CONFIG) destroy_config_form();
+            g_current_screen = SCREEN_FILE_MANAGER;
         } else if (ch == KEY_F(6)) {
             if (g_current_screen == SCREEN_CONFIG) destroy_config_form();
             g_current_screen = SCREEN_LOG_INDEX;
@@ -63,6 +66,8 @@ int main() {
                 handle_log_input(ch);
             } else if (g_current_screen == SCREEN_CONFIG) {
                 handle_config_input(ch);
+            } else if (g_current_screen == SCREEN_FILE_MANAGER) {
+                handle_file_manager_input(ch, &state);
             }
         }
 
@@ -93,6 +98,8 @@ int main() {
                 }
             } else if (g_current_screen == SCREEN_CONFIG) {
                 draw_config_screen(&state);
+            } else if (g_current_screen == SCREEN_FILE_MANAGER) {
+                draw_file_manager_screen(&state);
             } else if (g_current_screen == SCREEN_MONITOR) {
                 draw_monitor_screen(&state);
             }
